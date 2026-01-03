@@ -1233,9 +1233,6 @@ export default function PitchTracker() {
             </div>
           </div>
         </div>
-            </div>
-          </div>
-        </div>
       );
     }
 
