@@ -788,9 +788,94 @@ export default function PitchTracker() {
     };
 
     const undoLastPitch = () => {
-      if (pitches.length > 0) {
-        setGameState({ ...gameState, pitches: pitches.slice(0, -1) });
-      }
+      if (pitches.length === 0) return;
+      
+      // Remove last pitch
+      const newPitches = pitches.slice(0, -1);
+      
+      // Recalculate entire game state from scratch
+      let balls = 0;
+      let strikes = 0;
+      let outs = 0;
+      let battersFaced = 0;
+      let ballsInPlay = 0;
+      let firstPitchStrikes = 0;
+      let atBats = 0;
+      let threeBallCounts = 0;
+      let batterHand = null;
+      let inning = 1;
+      
+      newPitches.forEach((pitch, idx) => {
+        const isFirstPitch = balls === 0 && strikes === 0;
+        
+        if (pitch.outcome === 'ball') {
+          balls++;
+          if (balls === 3) threeBallCounts++;
+          if (balls >= 4) {
+            battersFaced++;
+            atBats++;
+            balls = 0;
+            strikes = 0;
+            batterHand = null;
+          }
+        } else if (['strike', 'ballInPlay', 'out'].includes(pitch.outcome)) {
+          strikes++;
+          if (isFirstPitch) firstPitchStrikes++;
+          
+          if (pitch.outcome === 'ballInPlay') {
+            ballsInPlay++;
+            battersFaced++;
+            atBats++;
+            balls = 0;
+            strikes = 0;
+            batterHand = null;
+          } else if (pitch.outcome === 'out') {
+            outs++;
+            battersFaced++;
+            atBats++;
+            balls = 0;
+            strikes = 0;
+            batterHand = null;
+            
+            // Check for inning changes
+            if (outs % 3 === 0) {
+              inning++;
+            }
+          } else if (strikes >= 3) {
+            outs++;
+            battersFaced++;
+            atBats++;
+            balls = 0;
+            strikes = 0;
+            batterHand = null;
+            
+            // Check for inning changes
+            if (outs % 3 === 0) {
+              inning++;
+            }
+          }
+        }
+        
+        // Keep track of current batter hand for UI
+        if (pitch.batterHand && balls < 4 && strikes < 3) {
+          batterHand = pitch.batterHand;
+        }
+      });
+      
+      setGameState({
+        ...gameState,
+        pitches: newPitches,
+        balls,
+        strikes,
+        outs,
+        battersFaced,
+        ballsInPlay,
+        firstPitchStrikes,
+        atBats,
+        threeBallCounts,
+        batterHand,
+        inning
+      });
     };
 
     const endInning = () => {
@@ -989,25 +1074,74 @@ export default function PitchTracker() {
             
             {unavailableToday.length > 0 && (
               <>
-                <h3 className="font-semibold mb-2">Unavailable Today:</h3>
-                <div className="space-y-1 mb-4">
-                  {unavailableToday.map(p => (
-                    <p key={p.id} className="text-sm text-red-600">• {p.fullName} - {p.availableToday} pitches</p>
-                  ))}
+                <h3 className="font-semibold mb-2 text-red-600">Needs Rest:</h3>
+                <div className="space-y-2 mb-4">
+                  {unavailableToday.map(p => {
+                    const lastGame = p.games?.[p.games.length - 1];
+                    const pitchCount = lastGame?.totalPitches || 0;
+                    const restDays = pitchCount >= 51 ? 3 : pitchCount >= 36 ? 2 : 1;
+                    const nextAvailable = new Date();
+                    nextAvailable.setDate(nextAvailable.getDate() + restDays);
+                    
+                    return (
+                      <div key={p.id} className="bg-red-50 p-3 rounded border border-red-200">
+                        <p className="font-semibold text-red-800">• {p.fullName}</p>
+                        <p className="text-sm text-red-700">Last outing: {pitchCount} pitches</p>
+                        <p className="text-sm text-red-700">Rest required: {restDays} days</p>
+                        <p className="text-sm font-semibold text-red-900">Next available: {nextAvailable.toLocaleDateString()}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             )}
             
             {availableToday.length > 0 && (
               <>
-                <h3 className="font-semibold mb-2">Available Today:</h3>
-                <div className="space-y-1">
+                <h3 className="font-semibold mb-2 text-green-600">Available Now:</h3>
+                <div className="space-y-1 mb-4">
                   {availableToday.map(p => (
-                    <p key={p.id} className="text-sm text-green-600">• {p.fullName} - {p.availableToday} pitches</p>
+                    <p key={p.id} className="text-sm text-green-600">
+                      • {p.fullName} - {p.availableToday} pitches available
+                    </p>
                   ))}
                 </div>
               </>
             )}
+            
+            <button 
+              onClick={() => {
+                let report = `PITCHER AVAILABILITY REPORT\nTeam: ${currentTeam.name}\nDate: ${new Date().toLocaleDateString()}\n\n`;
+                
+                if (unavailableToday.length > 0) {
+                  report += 'NEEDS REST:\n';
+                  unavailableToday.forEach(p => {
+                    const lastGame = p.games?.[p.games.length - 1];
+                    const pitchCount = lastGame?.totalPitches || 0;
+                    const restDays = pitchCount >= 51 ? 3 : pitchCount >= 36 ? 2 : 1;
+                    const nextAvailable = new Date();
+                    nextAvailable.setDate(nextAvailable.getDate() + restDays);
+                    report += `• ${p.fullName}\n  Last outing: ${pitchCount} pitches\n  Rest required: ${restDays} days\n  Next available: ${nextAvailable.toLocaleDateString()}\n\n`;
+                  });
+                }
+                
+                if (availableToday.length > 0) {
+                  report += 'AVAILABLE NOW:\n';
+                  availableToday.forEach(p => {
+                    report += `• ${p.fullName} - ${p.availableToday} pitches available\n`;
+                  });
+                }
+                
+                navigator.clipboard.writeText(report).then(() => {
+                  alert('Availability report copied to clipboard!');
+                }).catch(() => {
+                  alert('Could not copy to clipboard. Please try again.');
+                });
+              }}
+              className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mb-3"
+            >
+              📋 Copy Availability Report
+            </button>
           </div>
 
           <button
@@ -1015,7 +1149,7 @@ export default function PitchTracker() {
               setGameState(null);
               setCurrentView('dashboard');
             }}
-            className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700"
+            className="w-full bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700"
           >
             Return to Dashboard
           </button>
@@ -1033,12 +1167,19 @@ export default function PitchTracker() {
     const [showHistory, setShowHistory] = useState(false);
     const [coachNotes, setCoachNotes] = useState('');
     const [showSummary, setShowSummary] = useState(false);
+    const [pendingPitch, setPendingPitch] = useState(null);
 
-    const recordTrainingPitch = (pitchType) => {
-      const outcome = window.confirm(`${pitchType} - Click OK for STRIKE, Cancel for BALL`);
-      const newPitch = { type: pitchType, outcome: outcome ? 'strike' : 'ball', timestamp: Date.now() };
+    const selectPitchType = (pitchType) => {
+      setPendingPitch(pitchType);
+    };
+
+    const recordPitchOutcome = (outcome) => {
+      if (!pendingPitch) return;
+      
+      const newPitch = { type: pendingPitch, outcome, timestamp: Date.now() };
       const updated = [...sessionPitches, newPitch];
       setSessionPitches(updated);
+      setPendingPitch(null);
 
       if (updated.length === 45 && !window.alertShown45) {
         alert('45 pitches thrown. Consider ending session soon.');
@@ -1088,6 +1229,31 @@ export default function PitchTracker() {
       setSessionActive(false);
       setShowSummary(false);
       setSelectedPitcher(null);
+    };
+
+    const copyTrainingReport = () => {
+      const stats = getSessionStats(sessionPitches);
+      const report = `TRAINING SESSION REPORT
+Date: ${new Date().toLocaleDateString()}
+Pitcher: ${selectedPitcher.fullName}
+
+Total Pitches: ${stats.total}/${targetPitches}
+Overall Strike %: ${stats.strikePercent}%
+
+BY PITCH TYPE:
+${Object.entries(stats.byPitchType)
+  .filter(([_, data]) => data.count > 0)
+  .sort((a, b) => b[1].strikePercent - a[1].strikePercent)
+  .map(([type, data]) => `${type}: ${data.count} pitches, ${data.strikePercent}% strikes`)
+  .join('\n')}
+
+${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
+      
+      navigator.clipboard.writeText(report).then(() => {
+        alert('Report copied to clipboard! You can now paste it into a text message.');
+      }).catch(() => {
+        alert('Could not copy to clipboard. Please try again.');
+      });
     };
 
     const getSessionStats = (pitches) => {
@@ -1144,6 +1310,10 @@ export default function PitchTracker() {
               </div>
             </div>
 
+            <button onClick={copyTrainingReport} className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 mb-3">
+              📋 Copy Report to Clipboard
+            </button>
+
             <button onClick={saveSummary} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 mb-3">
               Save & Done
             </button>
@@ -1168,16 +1338,42 @@ export default function PitchTracker() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg p-4 shadow mb-4">
-              <h3 className="font-bold mb-3">Select Pitch Type</h3>
-              <div className="grid grid-cols-4 gap-2">
-                {pitchTypes.map(type => (
-                  <button key={type} onClick={() => recordTrainingPitch(type)} className="bg-blue-500 text-white py-3 rounded hover:bg-blue-600 text-sm font-semibold">
-                    {type}
+            {pendingPitch ? (
+              <div className="bg-blue-50 border-2 border-blue-500 rounded-lg p-4 mb-4">
+                <h3 className="font-bold text-lg mb-3 text-center">Selected: {pendingPitch}</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <button 
+                    onClick={() => recordPitchOutcome('strike')} 
+                    className="bg-green-500 text-white py-6 rounded-lg font-bold text-xl hover:bg-green-600"
+                  >
+                    STRIKE
                   </button>
-                ))}
+                  <button 
+                    onClick={() => recordPitchOutcome('ball')} 
+                    className="bg-red-500 text-white py-6 rounded-lg font-bold text-xl hover:bg-red-600"
+                  >
+                    BALL
+                  </button>
+                  <button 
+                    onClick={() => setPendingPitch(null)} 
+                    className="bg-gray-500 text-white py-6 rounded-lg font-bold text-xl hover:bg-gray-600"
+                  >
+                    CANCEL
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-white rounded-lg p-4 shadow mb-4">
+                <h3 className="font-bold mb-3">Select Pitch Type</h3>
+                <div className="grid grid-cols-4 gap-2">
+                  {pitchTypes.map(type => (
+                    <button key={type} onClick={() => selectPitchType(type)} className="bg-blue-500 text-white py-3 rounded hover:bg-blue-600 text-sm font-semibold">
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <button onClick={undoTrainingPitch} className="w-full bg-yellow-500 text-white py-2 rounded-lg font-semibold mb-4 hover:bg-yellow-600">↶ UNDO</button>
 
@@ -1220,7 +1416,20 @@ export default function PitchTracker() {
                   <div key={i} className="bg-white rounded-lg p-4 shadow">
                     <h3 className="font-bold">{new Date(session.date).toLocaleDateString()}</h3>
                     <p>Total Pitches: {stats.total}/{session.target}</p>
-                    <p>Strike %: <StrikeBadge percentage={stats.strikePercent} /></p>
+                    <p>Overall Strike %: <StrikeBadge percentage={stats.strikePercent} /></p>
+                    
+                    <div className="mt-3 border-t pt-2">
+                      <p className="font-semibold text-sm mb-1">By Pitch Type:</p>
+                      {Object.entries(stats.byPitchType)
+                        .filter(([_, data]) => data.count > 0)
+                        .sort((a, b) => b[1].strikePercent - a[1].strikePercent)
+                        .map(([type, data]) => (
+                          <p key={type} className="text-sm">
+                            • {type}: {data.count} pitches, <StrikeBadge percentage={data.strikePercent} />
+                          </p>
+                        ))}
+                    </div>
+                    
                     {session.notes && <p className="mt-2 text-sm text-gray-600 italic">{session.notes}</p>}
                   </div>
                 );
@@ -1245,12 +1454,35 @@ export default function PitchTracker() {
             <>
               <h2 className="text-xl font-bold mb-4">Select Pitcher</h2>
               <div className="space-y-3">
-                {allPitchers.map(pitcher => (
-                  <div key={pitcher.id} onClick={() => setSelectedPitcher(pitcher)} className="bg-white rounded-lg p-4 shadow hover:shadow-lg cursor-pointer transition">
-                    <h3 className="font-bold">{pitcher.fullName}, Age {pitcher.age}</h3>
-                    <p className="text-sm text-gray-600">Click to start training session</p>
-                  </div>
-                ))}
+                {(() => {
+                  // Deduplicate pitchers
+                  const uniquePitchers = allPitchers.reduce((acc, pitcher) => {
+                    if (!acc.find(p => p.id === pitcher.id)) {
+                      acc.push(pitcher);
+                    }
+                    return acc;
+                  }, []);
+                  
+                  // Get teams for each pitcher
+                  const getPitcherTeams = (pitcherId) => {
+                    return teams.filter(t => t.pitcherIds.includes(pitcherId));
+                  };
+                  
+                  return uniquePitchers.map(pitcher => {
+                    const pitcherTeams = getPitcherTeams(pitcher.id);
+                    return (
+                      <div key={pitcher.id} onClick={() => setSelectedPitcher(pitcher)} className="bg-white rounded-lg p-4 shadow hover:shadow-lg cursor-pointer transition">
+                        <h3 className="font-bold">{pitcher.fullName}, Age {pitcher.age}</h3>
+                        {pitcherTeams.length > 0 && (
+                          <p className="text-sm text-blue-600">
+                            Teams: {pitcherTeams.map(t => t.name).join(', ')}
+                          </p>
+                        )}
+                        <p className="text-sm text-gray-600 mt-1">Click to start training session</p>
+                      </div>
+                    );
+                  });
+                })()}
                 {allPitchers.length === 0 && (
                   <div className="bg-white rounded-lg p-8 text-center">
                     <p className="text-gray-600">No pitchers yet. Add pitchers to a team first.</p>
