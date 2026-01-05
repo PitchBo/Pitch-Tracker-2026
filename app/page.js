@@ -70,6 +70,34 @@ export default function PitchTracker() {
 
   const pitchTypes = ['4-Seam', '2-Seam', 'Curve', 'Slider', 'Change', 'Splitter', 'Cutter', 'Knuckle'];
 
+  // Calculate available pitches including training sessions
+  const calculateAvailablePitches = (pitcher) => {
+    // Start with base availability
+    let available = pitcher.availableToday || 85;
+    
+    // Get current date
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Check training sessions in last 4 days (regulation timeframe)
+    if (pitcher.trainingSessions && pitcher.trainingSessions.length > 0) {
+      pitcher.trainingSessions.forEach(session => {
+        const sessionDate = new Date(session.date);
+        sessionDate.setHours(0, 0, 0, 0);
+        
+        const daysDiff = Math.floor((today - sessionDate) / (1000 * 60 * 60 * 24));
+        
+        // If training was within last 4 days, subtract from availability
+        if (daysDiff >= 0 && daysDiff <= 4) {
+          const pitchCount = session.pitchData.length;
+          available -= pitchCount;
+        }
+      });
+    }
+    
+    return Math.max(0, available);
+  };
+
   // Initialize storage and load data on app start
   useEffect(() => {
     const initStorage = async () => {
@@ -360,33 +388,6 @@ export default function PitchTracker() {
           ? prev.selectedPitches.filter(p => p !== pitch)
           : [...prev.selectedPitches, pitch]
       }));
-    };
-
-    const calculateAvailablePitches = (pitcher) => {
-      // Start with base availability
-      let available = pitcher.availableToday || 85;
-      
-      // Get current date
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // Check training sessions in last 4 days (regulation timeframe)
-      if (pitcher.trainingSessions && pitcher.trainingSessions.length > 0) {
-        pitcher.trainingSessions.forEach(session => {
-          const sessionDate = new Date(session.date);
-          sessionDate.setHours(0, 0, 0, 0);
-          
-          const daysDiff = Math.floor((today - sessionDate) / (1000 * 60 * 60 * 24));
-          
-          // If training was within last 4 days, subtract from availability
-          if (daysDiff >= 0 && daysDiff <= 4) {
-            const pitchCount = session.pitchData.length;
-            available -= pitchCount;
-          }
-        });
-      }
-      
-      return Math.max(0, available);
     };
 
     const getLastGame = (pitcher) => {
