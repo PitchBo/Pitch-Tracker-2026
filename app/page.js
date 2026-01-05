@@ -362,6 +362,33 @@ export default function PitchTracker() {
       }));
     };
 
+    const calculateAvailablePitches = (pitcher) => {
+      // Start with base availability
+      let available = pitcher.availableToday || 85;
+      
+      // Get current date
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Check training sessions in last 4 days (regulation timeframe)
+      if (pitcher.trainingSessions && pitcher.trainingSessions.length > 0) {
+        pitcher.trainingSessions.forEach(session => {
+          const sessionDate = new Date(session.date);
+          sessionDate.setHours(0, 0, 0, 0);
+          
+          const daysDiff = Math.floor((today - sessionDate) / (1000 * 60 * 60 * 24));
+          
+          // If training was within last 4 days, subtract from availability
+          if (daysDiff >= 0 && daysDiff <= 4) {
+            const pitchCount = session.pitchData.length;
+            available -= pitchCount;
+          }
+        });
+      }
+      
+      return Math.max(0, available);
+    };
+
     const getLastGame = (pitcher) => {
       if (!pitcher.games || pitcher.games.length === 0) return null;
       return pitcher.games[pitcher.games.length - 1];
@@ -542,6 +569,7 @@ export default function PitchTracker() {
                 const bestPitches = getBestPitches(pitcher);
                 const last3Outings = pitcher.games ? pitcher.games.slice(-3).map(g => g.totalPitches).reverse() : [];
                 const last5Days = pitcher.games ? pitcher.games.slice(-5).reduce((sum, g) => sum + g.totalPitches, 0) : 0;
+                const availablePitches = calculateAvailablePitches(pitcher);
 
                 return (
                   <div key={pitcher.id} className="bg-white rounded-lg p-4 shadow hover:shadow-lg transition relative">
@@ -557,7 +585,7 @@ export default function PitchTracker() {
                         <h3 className="font-bold text-lg">{pitcher.fullName}, Age {pitcher.age}</h3>
                         <div className="mt-2 space-y-1 text-sm">
                           <p className="font-semibold">
-                            Available Today: <span className="text-green-600">{pitcher.availableToday} pitches</span>
+                            Available Today: <span className="text-green-600">{availablePitches} pitches</span>
                           </p>
                           <p>Last 5 Days: {last5Days} pitches</p>
                           <p>Last 3 Outings: {last3Outings.length > 0 ? last3Outings.join(', ') : 'None'}</p>
@@ -592,9 +620,10 @@ export default function PitchTracker() {
   // Pitch Tracking
   const PitchTrackingView = () => {
     if (!gameState.selectedPitcher) {
-      const availablePitchers = allPitchers.filter(p => 
-        currentTeam.pitcherIds.includes(p.id) && p.availableToday > 0
-      );
+      const availablePitchers = allPitchers.filter(p => {
+        if (!currentTeam.pitcherIds.includes(p.id)) return false;
+        return calculateAvailablePitches(p) > 0;
+      });
 
       return (
         <div className="min-h-screen bg-gray-100 p-4 pb-24">
@@ -610,31 +639,34 @@ export default function PitchTracker() {
             </div>
 
             <div className="space-y-3">
-              {availablePitchers.map(pitcher => (
-                <div
-                  key={pitcher.id}
-                  onClick={() => {
-                    setGameState({
-                      ...gameState,
-                      selectedPitcher: pitcher.id,
-                      pitches: [],
-                      batterHand: null,
-                      balls: 0,
-                      strikes: 0,
-                      outs: 0,
-                      battersFaced: 0,
-                      ballsInPlay: 0,
-                      firstPitchStrikes: 0,
-                      atBats: 0,
-                      threeBallCounts: 0
-                    });
-                  }}
-                  className="bg-white rounded-lg p-4 shadow hover:shadow-lg cursor-pointer transition"
-                >
-                  <h3 className="font-bold text-lg">{pitcher.fullName}</h3>
-                  <p className="text-green-600 font-semibold">Available: {pitcher.availableToday} pitches</p>
-                </div>
-              ))}
+              {availablePitchers.map(pitcher => {
+                const available = calculateAvailablePitches(pitcher);
+                return (
+                  <div
+                    key={pitcher.id}
+                    onClick={() => {
+                      setGameState({
+                        ...gameState,
+                        selectedPitcher: pitcher.id,
+                        pitches: [],
+                        batterHand: null,
+                        balls: 0,
+                        strikes: 0,
+                        outs: 0,
+                        battersFaced: 0,
+                        ballsInPlay: 0,
+                        firstPitchStrikes: 0,
+                        atBats: 0,
+                        threeBallCounts: 0
+                      });
+                    }}
+                    className="bg-white rounded-lg p-4 shadow hover:shadow-lg cursor-pointer transition"
+                  >
+                    <h3 className="font-bold text-lg">{pitcher.fullName}</h3>
+                    <p className="text-green-600 font-semibold">Available: {available} pitches</p>
+                  </div>
+                );
+              })}
               {availablePitchers.length === 0 && (
                 <div className="bg-white rounded-lg p-8 text-center">
                   <p className="text-gray-600">No pitchers currently available</p>
@@ -879,7 +911,13 @@ export default function PitchTracker() {
     };
 
     const endInning = () => {
-      setGameState({ ...gameState, inning: gameState.inning + 1 });
+      setGameState({ 
+        ...gameState, 
+        inning: gameState.inning + 1,
+        balls: 0,
+        strikes: 0,
+        batterHand: null
+      });
     };
 
     const endOuting = () => {
@@ -1037,8 +1075,8 @@ export default function PitchTracker() {
     const teamLhbPercent = teamTotals.lhbPitches > 0 ? Math.round((teamTotals.lhbStrikes / teamTotals.lhbPitches) * 100) : 0;
 
     const teamPitchers = allPitchers.filter(p => currentTeam.pitcherIds.includes(p.id));
-    const unavailableToday = teamPitchers.filter(p => p.availableToday <= 0);
-    const availableToday = teamPitchers.filter(p => p.availableToday > 0);
+    const unavailableToday = teamPitchers.filter(p => calculateAvailablePitches(p) <= 0);
+    const availableToday = teamPitchers.filter(p => calculateAvailablePitches(p) > 0);
 
     return (
       <div className="min-h-screen bg-gray-100 p-4 pb-24">
@@ -1100,18 +1138,39 @@ export default function PitchTracker() {
               <>
                 <h3 className="font-semibold mb-2 text-green-600">Available Now:</h3>
                 <div className="space-y-1 mb-4">
-                  {availableToday.map(p => (
-                    <p key={p.id} className="text-sm text-green-600">
-                      • {p.fullName} - {p.availableToday} pitches available
-                    </p>
-                  ))}
+                  {availableToday.map(p => {
+                    const available = calculateAvailablePitches(p);
+                    return (
+                      <p key={p.id} className="text-sm text-green-600">
+                        • {p.fullName} - {available} pitches available
+                      </p>
+                    );
+                  })}
                 </div>
               </>
             )}
             
             <button 
               onClick={() => {
-                let report = `PITCHER AVAILABILITY REPORT\nTeam: ${currentTeam.name}\nDate: ${new Date().toLocaleDateString()}\n\n`;
+                let report = `GAME SUMMARY REPORT\nTeam: ${currentTeam.name}\nDate: ${new Date().toLocaleDateString()}\n\n`;
+                
+                // Team totals
+                report += 'TEAM PITCHING TOTALS:\n';
+                report += `Total Pitches: ${teamTotals.totalPitches}\n`;
+                report += `Strike %: ${teamStrikePercent}%\n`;
+                report += `Batters Faced: ${teamTotals.battersFaced}\n`;
+                report += `Outs Recorded: ${teamTotals.outs}\n`;
+                report += `vs RHB: ${teamRhbPercent}% | vs LHB: ${teamLhbPercent}%\n\n`;
+                
+                // Individual pitcher lines
+                report += 'INDIVIDUAL PITCHER LINES:\n';
+                gamePitchers.forEach(p => {
+                  report += `${p.pitcher.fullName}: ${p.gameData.totalPitches} pitches | ${p.gameData.innings} IP | ${p.gameData.strikePercent}% strikes\n`;
+                });
+                report += '\n';
+                
+                // Availability
+                report += 'PITCHER AVAILABILITY:\n\n';
                 
                 if (unavailableToday.length > 0) {
                   report += 'NEEDS REST:\n';
@@ -1128,19 +1187,20 @@ export default function PitchTracker() {
                 if (availableToday.length > 0) {
                   report += 'AVAILABLE NOW:\n';
                   availableToday.forEach(p => {
-                    report += `• ${p.fullName} - ${p.availableToday} pitches available\n`;
+                    const available = calculateAvailablePitches(p);
+                    report += `• ${p.fullName} - ${available} pitches available\n`;
                   });
                 }
                 
                 navigator.clipboard.writeText(report).then(() => {
-                  alert('Availability report copied to clipboard!');
+                  alert('Complete game report copied to clipboard!');
                 }).catch(() => {
                   alert('Could not copy to clipboard. Please try again.');
                 });
               }}
               className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mb-3"
             >
-              📋 Copy Availability Report
+              📋 Copy Complete Game Report
             </button>
           </div>
 
