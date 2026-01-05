@@ -70,7 +70,7 @@ export default function PitchTracker() {
 
   const pitchTypes = ['4-Seam', '2-Seam', 'Curve', 'Slider', 'Change', 'Splitter', 'Cutter', 'Knuckle'];
 
-  // Calculate available pitches including training sessions
+  // Calculate available pitches including training sessions and cross-team workload
   const calculateAvailablePitches = (pitcher) => {
     // Start with base availability
     let available = pitcher.availableToday || 85;
@@ -79,21 +79,45 @@ export default function PitchTracker() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Check training sessions in last 4 days (regulation timeframe)
-    if (pitcher.trainingSessions && pitcher.trainingSessions.length > 0) {
-      pitcher.trainingSessions.forEach(session => {
-        const sessionDate = new Date(session.date);
-        sessionDate.setHours(0, 0, 0, 0);
-        
-        const daysDiff = Math.floor((today - sessionDate) / (1000 * 60 * 60 * 24));
-        
-        // If training was within last 4 days, subtract from availability
-        if (daysDiff >= 0 && daysDiff <= 4) {
-          const pitchCount = session.pitchData.length;
-          available -= pitchCount;
-        }
-      });
-    }
+    // Find all pitchers with same name and birthday (same player on multiple teams)
+    const samePitchers = allPitchers.filter(p => 
+      p.fullName === pitcher.fullName && 
+      p.birthday === pitcher.birthday
+    );
+    
+    // Check training sessions in last 4 days across ALL instances of this pitcher
+    samePitchers.forEach(p => {
+      if (p.trainingSessions && p.trainingSessions.length > 0) {
+        p.trainingSessions.forEach(session => {
+          const sessionDate = new Date(session.date);
+          sessionDate.setHours(0, 0, 0, 0);
+          
+          const daysDiff = Math.floor((today - sessionDate) / (1000 * 60 * 60 * 24));
+          
+          // If training was within last 4 days, subtract from availability
+          if (daysDiff >= 0 && daysDiff <= 4) {
+            const pitchCount = session.pitchData.length;
+            available -= pitchCount;
+          }
+        });
+      }
+      
+      // Also check games in last 4 days across all teams
+      if (p.games && p.games.length > 0) {
+        p.games.forEach(game => {
+          const gameDate = new Date(game.date);
+          gameDate.setHours(0, 0, 0, 0);
+          
+          const daysDiff = Math.floor((today - gameDate) / (1000 * 60 * 60 * 24));
+          
+          // If game was within last 4 days, subtract from availability
+          if (daysDiff >= 0 && daysDiff <= 4) {
+            const pitchCount = game.totalPitches || 0;
+            available -= pitchCount;
+          }
+        });
+      }
+    });
     
     return Math.max(0, available);
   };
@@ -915,6 +939,7 @@ export default function PitchTracker() {
       setGameState({ 
         ...gameState, 
         inning: gameState.inning + 1,
+        outs: Math.ceil(gameState.outs / 3) * 3, // Round up to next multiple of 3
         balls: 0,
         strikes: 0,
         batterHand: null
