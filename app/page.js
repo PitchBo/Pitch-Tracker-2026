@@ -70,7 +70,7 @@ export default function PitchTracker() {
 
   const pitchTypes = ['4-Seam', '2-Seam', 'Curve', 'Slider', 'Change', 'Splitter', 'Cutter', 'Knuckle'];
 
-  // Calculate available pitches including training sessions and cross-team workload
+  // Calculate available pitches including ONLY game pitches (not training)
   const calculateAvailablePitches = (pitcher) => {
     // Start with base availability
     let available = pitcher.availableToday || 85;
@@ -85,24 +85,8 @@ export default function PitchTracker() {
       p.birthday === pitcher.birthday
     );
     
-    // Check training sessions in last 4 days across ALL instances of this pitcher
+    // Check ONLY games in last 4 days across ALL instances of this pitcher
     samePitchers.forEach(p => {
-      if (p.trainingSessions && p.trainingSessions.length > 0) {
-        p.trainingSessions.forEach(session => {
-          const sessionDate = new Date(session.date);
-          sessionDate.setHours(0, 0, 0, 0);
-          
-          const daysDiff = Math.floor((today - sessionDate) / (1000 * 60 * 60 * 24));
-          
-          // If training was within last 4 days, subtract from availability
-          if (daysDiff >= 0 && daysDiff <= 4) {
-            const pitchCount = session.pitchData.length;
-            available -= pitchCount;
-          }
-        });
-      }
-      
-      // Also check games in last 4 days across all teams
       if (p.games && p.games.length > 0) {
         p.games.forEach(game => {
           const gameDate = new Date(game.date);
@@ -120,6 +104,38 @@ export default function PitchTracker() {
     });
     
     return Math.max(0, available);
+  };
+
+  // Calculate training pitches in last 3 days for display
+  const getTrainingPitchesLast3Days = (pitcher) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find all pitchers with same name and birthday
+    const samePitchers = allPitchers.filter(p => 
+      p.fullName === pitcher.fullName && 
+      p.birthday === pitcher.birthday
+    );
+    
+    let totalTraining = 0;
+    
+    samePitchers.forEach(p => {
+      if (p.trainingSessions && p.trainingSessions.length > 0) {
+        p.trainingSessions.forEach(session => {
+          const sessionDate = new Date(session.date);
+          sessionDate.setHours(0, 0, 0, 0);
+          
+          const daysDiff = Math.floor((today - sessionDate) / (1000 * 60 * 60 * 24));
+          
+          // Count training in last 3 days
+          if (daysDiff >= 0 && daysDiff <= 3) {
+            totalTraining += session.pitchData.length;
+          }
+        });
+      }
+    });
+    
+    return totalTraining;
   };
 
   // Initialize storage and load data on app start
@@ -595,6 +611,7 @@ export default function PitchTracker() {
                 const last3Outings = pitcher.games ? pitcher.games.slice(-3).map(g => g.totalPitches).reverse() : [];
                 const last5Days = pitcher.games ? pitcher.games.slice(-5).reduce((sum, g) => sum + g.totalPitches, 0) : 0;
                 const availablePitches = calculateAvailablePitches(pitcher);
+                const trainingLast3Days = getTrainingPitchesLast3Days(pitcher);
 
                 return (
                   <div key={pitcher.id} className="bg-white rounded-lg p-4 shadow hover:shadow-lg transition relative">
@@ -612,7 +629,8 @@ export default function PitchTracker() {
                           <p className="font-semibold">
                             Available Today: <span className="text-green-600">{availablePitches} pitches</span>
                           </p>
-                          <p>Last 5 Days: {last5Days} pitches</p>
+                          <p>Last 5 Days (Games): {last5Days} pitches</p>
+                          <p>Training Last 3 Days: <span className="text-blue-600">{trainingLast3Days} pitches</span></p>
                           <p>Last 3 Outings: {last3Outings.length > 0 ? last3Outings.join(', ') : 'None'}</p>
                           {lastGame && (
                             <p>
