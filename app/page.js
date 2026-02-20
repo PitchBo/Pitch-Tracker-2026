@@ -293,9 +293,9 @@ export default function PitchTracker() {
           </div>
 
           {showAddTeam && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full">
-                <div className="flex justify-between items-center mb-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full my-8 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
                   <h2 className="text-2xl font-bold">Add New Team</h2>
                   <button onClick={() => setShowAddTeam(false)} className="text-gray-500 hover:text-gray-700">
                     <X size={24} />
@@ -390,7 +390,7 @@ export default function PitchTracker() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-3 mt-6">
+                  <div className="flex gap-3 mt-6 pt-4 sticky bottom-0 bg-white border-t">
                     <button
                       type="button"
                       onClick={() => setShowAddTeam(false)}
