@@ -30,30 +30,6 @@ const calculateAge = (birthday) => {
   return age;
 };
 
-const getStrikeColor = (percentage) => {
-  if (percentage < 50) return { bg: '#DC3545', text: 'white' };
-  if (percentage < 65) return { bg: '#FFC107', text: 'black' };
-  return { bg: '#28A745', text: 'white' };
-};
-
-const StrikeBadge = ({ percentage }) => {
-  const colors = getStrikeColor(percentage);
-  return (
-    <span style={{
-      backgroundColor: colors.bg,
-      color: colors.text,
-      padding: '2px 8px',
-      borderRadius: '4px',
-      fontWeight: 'bold',
-      display: 'inline-block',
-      minWidth: '45px',
-      textAlign: 'center'
-    }}>
-      {percentage}%
-    </span>
-  );
-};
-
 export default function PitchTracker() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [teams, setTeams] = useState([]);
@@ -61,6 +37,10 @@ export default function PitchTracker() {
   const [currentTeam, setCurrentTeam] = useState(null);
   const [gameState, setGameState] = useState(null);
   const [storageReady, setStorageReady] = useState(false);
+  const [settings, setSettings] = useState({
+    redThreshold: 50,    // Below this = RED
+    yellowThreshold: 65  // Below this = YELLOW, above = GREEN
+  });
 
   const organizations = [
     'USA Baseball', 'MLB/Pitch Smart', 'Little League Baseball', 'PONY Baseball',
@@ -69,6 +49,32 @@ export default function PitchTracker() {
   ];
 
   const pitchTypes = ['4-Seam', '2-Seam', 'Curve', 'Slider', 'Change', 'Splitter', 'Cutter', 'Knuckle'];
+
+  // Get strike percentage color based on settings
+  const getStrikeColor = (percentage) => {
+    if (percentage < settings.redThreshold) return { bg: '#DC3545', text: 'white' };
+    if (percentage < settings.yellowThreshold) return { bg: '#FFC107', text: 'black' };
+    return { bg: '#28A745', text: 'white' };
+  };
+
+  // Strike badge component
+  const StrikeBadge = ({ percentage }) => {
+    const colors = getStrikeColor(percentage);
+    return (
+      <span style={{
+        backgroundColor: colors.bg,
+        color: colors.text,
+        padding: '2px 8px',
+        borderRadius: '4px',
+        fontWeight: 'bold',
+        display: 'inline-block',
+        minWidth: '45px',
+        textAlign: 'center'
+      }}>
+        {percentage}%
+      </span>
+    );
+  };
 
   // Calculate available pitches including ONLY game pitches (not training)
   const calculateAvailablePitches = (pitcher) => {
@@ -148,12 +154,16 @@ export default function PitchTracker() {
         await storage.init();
         const loadedTeams = await storage.getAllTeams();
         const loadedPitchers = await storage.getAllPitchers();
+        const loadedSettings = await storage.get('settings', 'app_settings');
         
         if (loadedTeams && loadedTeams.length > 0) {
           setTeams(loadedTeams);
         }
         if (loadedPitchers && loadedPitchers.length > 0) {
           setAllPitchers(loadedPitchers);
+        }
+        if (loadedSettings) {
+          setSettings(loadedSettings);
         }
         
         setStorageReady(true);
@@ -201,10 +211,35 @@ export default function PitchTracker() {
     savePitchers();
   }, [allPitchers, storageReady]);
 
+  // Auto-save settings whenever they change
+  useEffect(() => {
+    const saveSettings = async () => {
+      if (storageReady) {
+        try {
+          const storageModule = await import('../lib/storage');
+          const storage = storageModule.default;
+          await storage.save('settings', { key: 'app_settings', ...settings });
+          console.log('💾 Saved settings');
+        } catch (error) {
+          console.error('Failed to save settings:', error);
+        }
+      }
+    };
+    saveSettings();
+  }, [settings, storageReady]);
+
   // Dashboard
   const Dashboard = () => {
     const [showAddTeam, setShowAddTeam] = useState(false);
-    const [newTeam, setNewTeam] = useState({ name: '', organization: '', ageGroup: '' });
+    const [newTeam, setNewTeam] = useState({ 
+      name: '', 
+      organization: '', 
+      ageGroup: '',
+      coach1Name: '',
+      coach1Phone: '',
+      coach2Name: '',
+      coach2Phone: ''
+    });
 
     const handleAddTeam = (e) => {
       e.preventDefault();
@@ -218,7 +253,15 @@ export default function PitchTracker() {
         pitcherIds: []
       };
       setTeams([...teams, team]);
-      setNewTeam({ name: '', organization: '', ageGroup: '' });
+      setNewTeam({ 
+        name: '', 
+        organization: '', 
+        ageGroup: '',
+        coach1Name: '',
+        coach1Phone: '',
+        coach2Name: '',
+        coach2Phone: ''
+      });
       setShowAddTeam(false);
     };
 
@@ -295,6 +338,56 @@ export default function PitchTracker() {
                         className="w-full border rounded px-3 py-2"
                         placeholder="12U, 14U, Varsity, etc."
                       />
+                    </div>
+                    
+                    <div className="border-t pt-4">
+                      <h3 className="font-semibold mb-3">Team Coaches (Optional)</h3>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block font-semibold mb-1">Coach 1 Name</label>
+                          <input
+                            type="text"
+                            value={newTeam.coach1Name}
+                            onChange={(e) => setNewTeam({ ...newTeam, coach1Name: e.target.value })}
+                            className="w-full border rounded px-3 py-2"
+                            placeholder="John Smith"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold mb-1">Coach 1 Phone</label>
+                          <input
+                            type="tel"
+                            value={newTeam.coach1Phone}
+                            onChange={(e) => setNewTeam({ ...newTeam, coach1Phone: e.target.value })}
+                            className="w-full border rounded px-3 py-2"
+                            placeholder="555-123-4567"
+                          />
+                          <p className="text-xs text-gray-600 mt-1">For texting training reports</p>
+                        </div>
+                        
+                        <div>
+                          <label className="block font-semibold mb-1">Coach 2 Name</label>
+                          <input
+                            type="text"
+                            value={newTeam.coach2Name}
+                            onChange={(e) => setNewTeam({ ...newTeam, coach2Name: e.target.value })}
+                            className="w-full border rounded px-3 py-2"
+                            placeholder="Jane Doe"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold mb-1">Coach 2 Phone</label>
+                          <input
+                            type="tel"
+                            value={newTeam.coach2Phone}
+                            onChange={(e) => setNewTeam({ ...newTeam, coach2Phone: e.target.value })}
+                            className="w-full border rounded px-3 py-2"
+                            placeholder="555-987-6543"
+                          />
+                          <p className="text-xs text-gray-600 mt-1">For texting training reports</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="flex gap-3 mt-6">
@@ -376,7 +469,9 @@ export default function PitchTracker() {
     const [newPitcher, setNewPitcher] = useState({
       fullName: '',
       birthday: '',
-      selectedPitches: []
+      selectedPitches: [],
+      coachPhone: '',
+      playerPhone: ''
     });
 
     const teamPitchers = allPitchers.filter(p => currentTeam.pitcherIds.includes(p.id));
@@ -394,6 +489,8 @@ export default function PitchTracker() {
         birthday: newPitcher.birthday,
         age: calculateAge(newPitcher.birthday),
         pitchArsenal: newPitcher.selectedPitches,
+        coachPhone: newPitcher.coachPhone,
+        playerPhone: newPitcher.playerPhone,
         games: [],
         trainingSessions: [],
         availableToday: 85
@@ -406,7 +503,7 @@ export default function PitchTracker() {
           : t
       ));
       setCurrentTeam({ ...currentTeam, pitcherIds: [...currentTeam.pitcherIds, pitcher.id] });
-      setNewPitcher({ fullName: '', birthday: '', selectedPitches: [] });
+      setNewPitcher({ fullName: '', birthday: '', selectedPitches: [], coachPhone: '', playerPhone: '' });
       setShowAddPitcher(false);
     };
 
@@ -574,13 +671,35 @@ export default function PitchTracker() {
                         ))}
                       </div>
                     </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Coach Phone (Optional)</label>
+                      <input
+                        type="tel"
+                        placeholder="555-123-4567"
+                        value={newPitcher.coachPhone}
+                        onChange={(e) => setNewPitcher({ ...newPitcher, coachPhone: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                      <p className="text-xs text-gray-600 mt-1">For sending training reports via text</p>
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Player Phone (Optional)</label>
+                      <input
+                        type="tel"
+                        placeholder="555-987-6543"
+                        value={newPitcher.playerPhone}
+                        onChange={(e) => setNewPitcher({ ...newPitcher, playerPhone: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                      <p className="text-xs text-gray-600 mt-1">For sending training reports via text</p>
+                    </div>
                   </div>
                   <div className="flex gap-3 mt-6">
                     <button
                       type="button"
                       onClick={() => {
                         setShowAddPitcher(false);
-                        setNewPitcher({ fullName: '', birthday: '', selectedPitches: [] });
+                        setNewPitcher({ fullName: '', birthday: '', selectedPitches: [], coachPhone: '', playerPhone: '' });
                       }}
                       className="flex-1 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
                     >
@@ -773,19 +892,28 @@ export default function PitchTracker() {
       let newAtBats = gameState.atBats;
       let newThreeBallCounts = gameState.threeBallCounts;
       let newBatterHand = gameState.batterHand;
+      
+      // Track if at-bat will complete (don't update stats mid at-bat)
+      let atBatCompletes = false;
 
       if (outcome === 'ball') {
         newBalls++;
-        if (newBalls === 3) newThreeBallCounts++;
+        // Don't increment threeBallCounts yet - wait for at-bat to complete
       } else if (['strike', 'ballInPlay', 'out'].includes(outcome)) {
         newStrikes++;
-        if (isFirstPitch) newFirstPitchStrikes++;
+        // Don't increment firstPitchStrikes yet - wait for at-bat to complete
       }
 
       if (outcome === 'ballInPlay') {
         newBallsInPlay++;
         newBattersFaced++;
         newAtBats++;
+        atBatCompletes = true;
+        
+        // NOW update stats since at-bat is complete
+        if (isFirstPitch) newFirstPitchStrikes++;
+        if (newBalls === 3) newThreeBallCounts++;
+        
         newBalls = 0;
         newStrikes = 0;
         newBatterHand = null;
@@ -793,6 +921,12 @@ export default function PitchTracker() {
         newOuts++;
         newBattersFaced++;
         newAtBats++;
+        atBatCompletes = true;
+        
+        // NOW update stats since at-bat is complete
+        if (isFirstPitch) newFirstPitchStrikes++;
+        if (newBalls === 3) newThreeBallCounts++;
+        
         newBalls = 0;
         newStrikes = 0;
         newBatterHand = null;
@@ -818,6 +952,12 @@ export default function PitchTracker() {
         newOuts++;
         newBattersFaced++;
         newAtBats++;
+        atBatCompletes = true;
+        
+        // NOW update stats since at-bat is complete
+        if (isFirstPitch) newFirstPitchStrikes++;
+        if (newBalls === 3) newThreeBallCounts++;
+        
         newBalls = 0;
         newStrikes = 0;
         newBatterHand = null;
@@ -842,6 +982,12 @@ export default function PitchTracker() {
       } else if (newBalls >= 4) {
         newBattersFaced++;
         newAtBats++;
+        atBatCompletes = true;
+        
+        // NOW update stats since at-bat is complete
+        if (isFirstPitch) newFirstPitchStrikes++;
+        if (newBalls === 3) newThreeBallCounts++;  // Was 3 before the 4th ball
+        
         newBalls = 0;
         newStrikes = 0;
         newBatterHand = null;
@@ -1051,19 +1197,19 @@ export default function PitchTracker() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <button onClick={() => recordPitch('ball')} className="bg-red-500 text-white py-6 rounded-lg font-bold text-xl hover:bg-red-600">BALL</button>
-            <button onClick={() => recordPitch('strike')} className="bg-green-500 text-white py-6 rounded-lg font-bold text-xl hover:bg-green-600">STRIKE</button>
-            <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-6 rounded-lg font-bold text-xl hover:bg-blue-600">BALL IN PLAY</button>
-            <button onClick={() => recordPitch('out')} className="bg-purple-500 text-white py-6 rounded-lg font-bold text-xl hover:bg-purple-600">OUT</button>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <button onClick={() => recordPitch('ball')} className="bg-red-500 text-white py-3 rounded-lg font-bold text-base hover:bg-red-600">BALL</button>
+            <button onClick={() => recordPitch('strike')} className="bg-green-500 text-white py-3 rounded-lg font-bold text-base hover:bg-green-600">STRIKE</button>
+            <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BALL IN PLAY</button>
+            <button onClick={() => recordPitch('out')} className="bg-purple-500 text-white py-3 rounded-lg font-bold text-base hover:bg-purple-600">OUT</button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <button onClick={endInning} className="bg-gray-600 text-white py-3 rounded-lg font-semibold hover:bg-gray-700">END INNING</button>
-            <button onClick={endOuting} className="bg-orange-600 text-white py-3 rounded-lg font-semibold hover:bg-orange-700">END OUTING</button>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <button onClick={endInning} className="bg-gray-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-gray-700">END INNING</button>
+            <button onClick={endOuting} className="bg-orange-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-orange-700">END OUTING</button>
           </div>
 
-          <button onClick={undoLastPitch} className="w-full bg-yellow-500 text-white py-2 rounded-lg font-semibold mb-4 hover:bg-yellow-600">↶ UNDO</button>
+          <button onClick={undoLastPitch} className="w-full bg-yellow-500 text-white py-2 rounded-lg font-semibold text-sm mb-4 hover:bg-yellow-600">↶ UNDO</button>
 
           <div className="bg-white rounded-lg p-4 shadow mb-4">
             <h3 className="font-bold mb-3">Live Stats</h3>
@@ -1265,6 +1411,7 @@ export default function PitchTracker() {
   // Training View
   const TrainingView = () => {
     const [selectedPitcher, setSelectedPitcher] = useState(null);
+    const [selectedTeam, setSelectedTeam] = useState(null);
     const [targetPitches, setTargetPitches] = useState(25);
     const [sessionActive, setSessionActive] = useState(false);
     const [sessionPitches, setSessionPitches] = useState([]);
@@ -1360,6 +1507,119 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       });
     };
 
+    const shareTrainingReport = () => {
+      const stats = getSessionStats(sessionPitches);
+      const report = `TRAINING SESSION REPORT
+Date: ${new Date().toLocaleDateString()}
+Pitcher: ${selectedPitcher.fullName}
+
+Total Pitches: ${stats.total}/${targetPitches}
+Overall Strike %: ${stats.strikePercent}%
+
+BY PITCH TYPE:
+${Object.entries(stats.byPitchType)
+  .filter(([_, data]) => data.count > 0)
+  .sort((a, b) => b[1].strikePercent - a[1].strikePercent)
+  .map(([type, data]) => `${type}: ${data.count} pitches, ${data.strikePercent}% strikes`)
+  .join('\n')}
+
+${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
+
+      if (navigator.share) {
+        navigator.share({
+          title: 'Training Session Report',
+          text: report
+        }).catch((error) => {
+          if (error.name !== 'AbortError') {
+            alert('Could not share. Please try copy to clipboard instead.');
+          }
+        });
+      } else {
+        alert('Share not supported on this device. Use "Copy to Clipboard" instead.');
+      }
+    };
+
+    const textCoach1 = () => {
+      if (!selectedTeam || !selectedTeam.coach1Phone) {
+        alert('No Coach 1 phone number on file for this team.');
+        return;
+      }
+      const stats = getSessionStats(sessionPitches);
+      const report = `TRAINING SESSION REPORT
+Date: ${new Date().toLocaleDateString()}
+Team: ${selectedTeam.name}
+Pitcher: ${selectedPitcher.fullName}
+
+Total Pitches: ${stats.total}/${targetPitches}
+Overall Strike %: ${stats.strikePercent}%
+
+BY PITCH TYPE:
+${Object.entries(stats.byPitchType)
+  .filter(([_, data]) => data.count > 0)
+  .sort((a, b) => b[1].strikePercent - a[1].strikePercent)
+  .map(([type, data]) => `${type}: ${data.count} pitches, ${data.strikePercent}% strikes`)
+  .join('\n')}
+
+${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
+
+      const smsUrl = `sms:${selectedTeam.coach1Phone}${/iPhone|iPad|iPod/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(report)}`;
+      window.location.href = smsUrl;
+    };
+
+    const textCoach2 = () => {
+      if (!selectedTeam || !selectedTeam.coach2Phone) {
+        alert('No Coach 2 phone number on file for this team.');
+        return;
+      }
+      const stats = getSessionStats(sessionPitches);
+      const report = `TRAINING SESSION REPORT
+Date: ${new Date().toLocaleDateString()}
+Team: ${selectedTeam.name}
+Pitcher: ${selectedPitcher.fullName}
+
+Total Pitches: ${stats.total}/${targetPitches}
+Overall Strike %: ${stats.strikePercent}%
+
+BY PITCH TYPE:
+${Object.entries(stats.byPitchType)
+  .filter(([_, data]) => data.count > 0)
+  .sort((a, b) => b[1].strikePercent - a[1].strikePercent)
+  .map(([type, data]) => `${type}: ${data.count} pitches, ${data.strikePercent}% strikes`)
+  .join('\n')}
+
+${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
+
+      const smsUrl = `sms:${selectedTeam.coach2Phone}${/iPhone|iPad|iPod/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(report)}`;
+      window.location.href = smsUrl;
+    };
+
+    const textPlayer = () => {
+      if (!selectedPitcher.playerPhone) {
+        alert('No player phone number on file. Please add it to the pitcher profile.');
+        return;
+      }
+      const stats = getSessionStats(sessionPitches);
+      const report = `TRAINING SESSION REPORT
+Date: ${new Date().toLocaleDateString()}
+Team: ${selectedTeam?.name || 'Training'}
+Pitcher: ${selectedPitcher.fullName}
+
+Total Pitches: ${stats.total}/${targetPitches}
+Overall Strike %: ${stats.strikePercent}%
+
+BY PITCH TYPE:
+${Object.entries(stats.byPitchType)
+  .filter(([_, data]) => data.count > 0)
+  .sort((a, b) => b[1].strikePercent - a[1].strikePercent)
+  .map(([type, data]) => `${type}: ${data.count} pitches, ${data.strikePercent}% strikes`)
+  .join('\n')}
+
+${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
+
+      const smsUrl = `sms:${selectedPitcher.playerPhone}${/iPhone|iPad|iPod/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(report)}`;
+      window.location.href = smsUrl;
+    };
+
     const getSessionStats = (pitches) => {
       const total = pitches.length;
       const strikes = pitches.filter(p => p.outcome === 'strike').length;
@@ -1418,7 +1678,29 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
               📋 Copy Report to Clipboard
             </button>
 
-            <button onClick={saveSummary} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 mb-3">
+            <button onClick={shareTrainingReport} className="w-full bg-purple-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-purple-700 mb-3">
+              📤 Share Report
+            </button>
+
+            {selectedTeam?.coach1Phone && (
+              <button onClick={textCoach1} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 mb-3">
+                💬 Text {selectedTeam.coach1Name || 'Coach 1'} ({selectedTeam.coach1Phone})
+              </button>
+            )}
+
+            {selectedTeam?.coach2Phone && (
+              <button onClick={textCoach2} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 mb-3">
+                💬 Text {selectedTeam.coach2Name || 'Coach 2'} ({selectedTeam.coach2Phone})
+              </button>
+            )}
+
+            {selectedPitcher.playerPhone && (
+              <button onClick={textPlayer} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 mb-3">
+                💬 Text Player ({selectedPitcher.playerPhone})
+              </button>
+            )}
+
+            <button onClick={saveSummary} className="w-full bg-gray-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-gray-700 mb-3">
               Save & Done
             </button>
           </div>
@@ -1575,7 +1857,13 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
                   return uniquePitchers.map(pitcher => {
                     const pitcherTeams = getPitcherTeams(pitcher.id);
                     return (
-                      <div key={pitcher.id} onClick={() => setSelectedPitcher(pitcher)} className="bg-white rounded-lg p-4 shadow hover:shadow-lg cursor-pointer transition">
+                      <div key={pitcher.id} onClick={() => {
+                        setSelectedPitcher(pitcher);
+                        // Set team context - use first team if on multiple
+                        if (pitcherTeams.length > 0) {
+                          setSelectedTeam(pitcherTeams[0]);
+                        }
+                      }} className="bg-white rounded-lg p-4 shadow hover:shadow-lg cursor-pointer transition">
                         <h3 className="font-bold">{pitcher.fullName}, Age {pitcher.age}</h3>
                         {pitcherTeams.length > 0 && (
                           <p className="text-sm text-blue-600">
@@ -1636,6 +1924,219 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
     );
   };
 
+  // Settings View
+  const SettingsView = () => {
+    const [tempSettings, setTempSettings] = useState({ ...settings });
+    const [showPreview, setShowPreview] = useState(false);
+
+    const saveSettings = () => {
+      // Validate thresholds
+      if (tempSettings.redThreshold >= tempSettings.yellowThreshold) {
+        alert('Red threshold must be lower than yellow threshold!');
+        return;
+      }
+      if (tempSettings.redThreshold < 0 || tempSettings.yellowThreshold > 100) {
+        alert('Thresholds must be between 0 and 100!');
+        return;
+      }
+      
+      setSettings(tempSettings);
+      alert('Settings saved! Color changes will apply to all strike percentages.');
+    };
+
+    const resetDefaults = () => {
+      if (window.confirm('Reset to default color thresholds?')) {
+        const defaults = {
+          redThreshold: 50,
+          yellowThreshold: 65
+        };
+        setTempSettings(defaults);
+        setSettings(defaults);
+        alert('Reset to defaults!');
+      }
+    };
+
+    // Get color for preview
+    const getPreviewColor = (percentage) => {
+      if (percentage < tempSettings.redThreshold) return { bg: '#DC3545', text: 'white', label: 'RED' };
+      if (percentage < tempSettings.yellowThreshold) return { bg: '#FFC107', text: 'black', label: 'YELLOW' };
+      return { bg: '#28A745', text: 'white', label: 'GREEN' };
+    };
+
+    const previewPercentages = [30, 40, 50, 55, 60, 65, 70, 75, 80, 85, 90];
+
+    return (
+      <div className="min-h-screen bg-gray-100 p-4 pb-24">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-3xl font-bold mb-6">⚙️ Settings</h1>
+
+          <div className="bg-white rounded-lg p-6 shadow mb-4">
+            <h2 className="text-xl font-bold mb-4">Strike Percentage Colors</h2>
+            <p className="text-sm text-gray-600 mb-6">
+              Customize the color thresholds for strike percentages throughout the app. 
+              These colors apply to training sessions, games, and all reports.
+            </p>
+
+            <div className="space-y-6">
+              {/* Red Threshold */}
+              <div>
+                <label className="block font-semibold mb-2">
+                  🔴 Red Threshold (Poor Performance)
+                </label>
+                <p className="text-sm text-gray-600 mb-2">
+                  Strike % below this value = RED
+                </p>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={tempSettings.redThreshold}
+                    onChange={(e) => setTempSettings({ ...tempSettings, redThreshold: parseInt(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={tempSettings.redThreshold}
+                    onChange={(e) => setTempSettings({ ...tempSettings, redThreshold: parseInt(e.target.value) || 0 })}
+                    className="w-20 border rounded px-3 py-2 text-center font-bold"
+                  />
+                  <span className="font-bold">%</span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  Currently: Below {tempSettings.redThreshold}% = 🔴 RED
+                </p>
+              </div>
+
+              {/* Yellow Threshold */}
+              <div>
+                <label className="block font-semibold mb-2">
+                  🟡 Yellow Threshold (Good Performance)
+                </label>
+                <p className="text-sm text-gray-600 mb-2">
+                  Strike % below this value = YELLOW (above red = yellow)
+                </p>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={tempSettings.yellowThreshold}
+                    onChange={(e) => setTempSettings({ ...tempSettings, yellowThreshold: parseInt(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={tempSettings.yellowThreshold}
+                    onChange={(e) => setTempSettings({ ...tempSettings, yellowThreshold: parseInt(e.target.value) || 0 })}
+                    className="w-20 border rounded px-3 py-2 text-center font-bold"
+                  />
+                  <span className="font-bold">%</span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  Currently: {tempSettings.redThreshold}% - {tempSettings.yellowThreshold}% = 🟡 YELLOW
+                </p>
+              </div>
+
+              {/* Green (calculated) */}
+              <div className="bg-gray-50 p-4 rounded">
+                <label className="block font-semibold mb-2">
+                  🟢 Green (Excellent Performance)
+                </label>
+                <p className="text-sm text-gray-600">
+                  Strike % at or above yellow threshold = GREEN
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  Currently: {tempSettings.yellowThreshold}% and above = 🟢 GREEN
+                </p>
+              </div>
+            </div>
+
+            {/* Preview Toggle */}
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="w-full mt-6 bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700"
+            >
+              {showPreview ? 'Hide Preview' : 'Show Preview'}
+            </button>
+
+            {/* Preview Section */}
+            {showPreview && (
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
+                <h3 className="font-bold mb-3">Preview - How Strike %'s Will Look:</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {previewPercentages.map(pct => {
+                    const colors = getPreviewColor(pct);
+                    return (
+                      <div key={pct} className="flex items-center justify-between">
+                        <span className="text-sm font-semibold">{pct}%:</span>
+                        <span style={{
+                          backgroundColor: colors.bg,
+                          color: colors.text,
+                          padding: '4px 12px',
+                          borderRadius: '4px',
+                          fontWeight: 'bold',
+                          minWidth: '60px',
+                          textAlign: 'center'
+                        }}>
+                          {pct}%
+                        </span>
+                        <span className="text-xs text-gray-600">({colors.label})</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={resetDefaults}
+                className="flex-1 bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold hover:bg-gray-400"
+              >
+                Reset to Defaults
+              </button>
+              <button
+                onClick={saveSettings}
+                className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700"
+              >
+                Save Settings
+              </button>
+            </div>
+
+            {/* Current Settings Summary */}
+            <div className="mt-6 p-4 bg-blue-50 rounded border border-blue-200">
+              <h3 className="font-bold mb-2">📋 Current Settings Summary:</h3>
+              <div className="space-y-1 text-sm">
+                <p>🔴 <strong>Red:</strong> Below {tempSettings.redThreshold}%</p>
+                <p>🟡 <strong>Yellow:</strong> {tempSettings.redThreshold}% - {tempSettings.yellowThreshold - 1}%</p>
+                <p>🟢 <strong>Green:</strong> {tempSettings.yellowThreshold}% and above</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Box */}
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+            <p className="font-bold text-blue-900">ℹ️ Where These Colors Apply:</p>
+            <ul className="text-sm text-blue-800 mt-2 space-y-1">
+              <li>• Team roster displays</li>
+              <li>• Training session summaries</li>
+              <li>• Training history</li>
+              <li>• Game statistics</li>
+              <li>• Pitcher performance charts</li>
+              <li>• All strike percentage badges</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Bottom Nav
   const BottomNav = () => (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
@@ -1647,6 +2148,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
         <button onClick={() => setCurrentView('training')} className={`flex flex-col items-center gap-1 px-4 py-2 ${currentView === 'training' ? 'text-blue-600' : 'text-gray-600'}`}>
           <TrendingUp size={24} />
           <span className="text-xs">Training</span>
+        </button>
+        <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-1 px-4 py-2 ${currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'}`}>
+          <div className="text-2xl">⚙️</div>
+          <span className="text-xs">Settings</span>
         </button>
       </div>
     </div>
@@ -1667,6 +2172,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       {currentView === 'pitchTracking' && <PitchTrackingView />}
       {currentView === 'gameEnd' && <GameEndView />}
       {currentView === 'training' && <TrainingView />}
+      {currentView === 'settings' && <SettingsView />}
       <BottomNav />
     </div>
   );
