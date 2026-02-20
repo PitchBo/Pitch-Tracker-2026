@@ -273,7 +273,7 @@ export default function PitchTracker() {
     };
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-24">
+      <div className="min-h-screen bg-gray-100 p-4 pb-32">
         <div className="max-w-4xl mx-auto">
           <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
             <p className="font-bold text-blue-900">📊 The Pitch Tracker - Demo Version</p>
@@ -390,7 +390,7 @@ export default function PitchTracker() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-3 mt-6 pt-4 sticky bottom-0 bg-white border-t">
+                  <div className="flex gap-3 mt-6 pt-4 pb-20 sticky bottom-0 bg-white border-t">
                     <button
                       type="button"
                       onClick={() => setShowAddTeam(false)}
@@ -576,7 +576,7 @@ export default function PitchTracker() {
     };
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-24">
+      <div className="min-h-screen bg-gray-100 p-4 pb-32">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-4 mb-6">
             <button
@@ -788,7 +788,7 @@ export default function PitchTracker() {
       });
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-24">
+        <div className="min-h-screen bg-gray-100 p-4 pb-32">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center gap-4 mb-6">
               <button
@@ -1156,7 +1156,7 @@ export default function PitchTracker() {
     };
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-24">
+      <div className="min-h-screen bg-gray-100 p-4 pb-32">
         <div className="max-w-4xl mx-auto">
           <div className="text-sm text-gray-600 mb-4">
             {pitcher.fullName} | {currentTeam.name} | {new Date().toLocaleDateString()}
@@ -1269,7 +1269,7 @@ export default function PitchTracker() {
     const availableToday = teamPitchers.filter(p => calculateAvailablePitches(p) > 0);
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-24">
+      <div className="min-h-screen bg-gray-100 p-4 pb-32">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6">Game Summary</h1>
           
@@ -1642,7 +1642,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       const stats = getSessionStats(sessionPitches);
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-24">
+        <div className="min-h-screen bg-gray-100 p-4 pb-32">
           <div className="max-w-4xl mx-auto">
             <h1 className="text-3xl font-bold mb-6">Training Session Summary</h1>
             
@@ -1714,7 +1714,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       const progressText = stats.total >= 45 ? 'font-bold text-orange-600' : '';
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-24">
+        <div className="min-h-screen bg-gray-100 p-4 pb-32">
           <div className="max-w-4xl mx-auto">
             <div className="mb-4">
               <h2 className="text-2xl font-bold">{selectedPitcher.fullName}</h2>
@@ -1788,7 +1788,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       const sessions = selectedPitcher.trainingSessions || [];
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-24">
+        <div className="min-h-screen bg-gray-100 p-4 pb-32">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center gap-4 mb-6">
               <button onClick={() => setShowHistory(false)} className="text-blue-600 hover:text-blue-800"><ArrowLeft size={24} /></button>
@@ -1832,7 +1832,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
     }
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-24">
+      <div className="min-h-screen bg-gray-100 p-4 pb-32">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6">Training</h1>
 
@@ -1966,7 +1966,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
     const previewPercentages = [30, 40, 50, 55, 60, 65, 70, 75, 80, 85, 90];
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-24">
+      <div className="min-h-screen bg-gray-100 p-4 pb-32">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6">⚙️ Settings</h1>
 
