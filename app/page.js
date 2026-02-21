@@ -1719,10 +1719,7 @@ export default function PitchTracker() {
         } else if (pitch.outcome === 'strike') {
           strikes++;
           // Strike increments count, at-bat continues
-        }
-        
-        // Handle outcomes that complete at-bat
-        if (pitch.outcome === 'ballInPlay') {
+        } else if (pitch.outcome === 'ballInPlay') {
             // Ball in play - at-bat completes
             if (wasFirstPitchStrike) firstPitchStrikes++;
             if (balls === 3) threeBallCounts++;
@@ -1766,7 +1763,6 @@ export default function PitchTracker() {
               inning++;
             }
           }
-        }
         
         // Keep track of current batter hand for UI
         if (pitch.batterHand && balls < 4 && strikes < 3) {
