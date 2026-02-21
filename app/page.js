@@ -1208,15 +1208,15 @@ export default function PitchTracker() {
     const pitcher = allPitchers.find(p => p.id === gameState.selectedPitcher);
     const pitches = gameState.pitches || [];
     const totalPitches = pitches.length;
-    const totalStrikes = pitches.filter(p => ['strike', 'ballInPlay', 'out'].includes(p.outcome)).length;
+    const totalStrikes = pitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
     const strikePercent = totalPitches > 0 ? Math.round((totalStrikes / totalPitches) * 100) : 0;
 
     const rhbPitches = pitches.filter(p => p.batterHand === 'R');
-    const rhbStrikes = rhbPitches.filter(p => ['strike', 'ballInPlay', 'out'].includes(p.outcome)).length;
+    const rhbStrikes = rhbPitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
     const rhbStrikePercent = rhbPitches.length > 0 ? Math.round((rhbStrikes / rhbPitches.length) * 100) : 0;
 
     const lhbPitches = pitches.filter(p => p.batterHand === 'L');
-    const lhbStrikes = lhbPitches.filter(p => ['strike', 'ballInPlay', 'out'].includes(p.outcome)).length;
+    const lhbStrikes = lhbPitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
     const lhbStrikePercent = lhbPitches.length > 0 ? Math.round((lhbStrikes / lhbPitches.length) * 100) : 0;
 
     const getLast20StrikePercentages = () => {
@@ -1224,7 +1224,7 @@ export default function PitchTracker() {
       for (let i = 0; i < pitches.length; i++) {
         const start = Math.max(0, i - 19);
         const window = pitches.slice(start, i + 1);
-        const windowStrikes = window.filter(p => ['strike', 'ballInPlay', 'out'].includes(p.outcome)).length;
+        const windowStrikes = window.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
         const percent = Math.round((windowStrikes / window.length) * 100);
         data.push({ pitch: i + 1, percent });
       }
@@ -1397,50 +1397,76 @@ export default function PitchTracker() {
       let threeBallCounts = 0;
       let batterHand = null;
       let inning = 1;
+      let wasFirstPitchStrike = false; // Track if current at-bat started with strike
       
       newPitches.forEach((pitch, idx) => {
         const isFirstPitch = balls === 0 && strikes === 0;
         
+        // Track if THIS pitch is a first pitch strike
+        if (isFirstPitch && ['strike', 'ballInPlay', 'out', 'foul'].includes(pitch.outcome)) {
+          wasFirstPitchStrike = true;
+        }
+        
         if (pitch.outcome === 'ball') {
           balls++;
-          if (balls === 3) threeBallCounts++;
           if (balls >= 4) {
+            // Walk - at-bat completes
+            if (balls === 4 && wasFirstPitchStrike) firstPitchStrikes++;
+            if (balls === 4) threeBallCounts++;
             battersFaced++;
             atBats++;
             balls = 0;
             strikes = 0;
             batterHand = null;
+            wasFirstPitchStrike = false;
           }
+        } else if (pitch.outcome === 'foul') {
+          // Foul ball logic
+          if (strikes < 2) {
+            strikes++;
+          }
+          // Foul never completes at-bat
         } else if (['strike', 'ballInPlay', 'out'].includes(pitch.outcome)) {
           strikes++;
-          if (isFirstPitch) firstPitchStrikes++;
           
           if (pitch.outcome === 'ballInPlay') {
+            // Ball in play - at-bat completes
+            if (wasFirstPitchStrike) firstPitchStrikes++;
+            if (balls === 3) threeBallCounts++;
             ballsInPlay++;
             battersFaced++;
             atBats++;
             balls = 0;
             strikes = 0;
             batterHand = null;
+            wasFirstPitchStrike = false;
           } else if (pitch.outcome === 'out') {
+            // Out recorded - at-bat completes
+            if (wasFirstPitchStrike) firstPitchStrikes++;
+            if (balls === 3) threeBallCounts++;
             outs++;
             battersFaced++;
             atBats++;
             balls = 0;
             strikes = 0;
             batterHand = null;
+            wasFirstPitchStrike = false;
             
             // Check for inning changes
             if (outs % 3 === 0) {
               inning++;
             }
           } else if (strikes >= 3) {
+            // Strikeout - at-bat completes
+            if (wasFirstPitchStrike) firstPitchStrikes++;
+            if (balls === 3) threeBallCounts++;
             outs++;
             battersFaced++;
             atBats++;
             balls = 0;
             strikes = 0;
             batterHand = null;
+            wasFirstPitchStrike = false;
             
             // Check for inning changes
             if (outs % 3 === 0) {
