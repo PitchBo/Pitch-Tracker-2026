@@ -213,7 +213,6 @@ export default function PitchTracker() {
     
     // Get daily limit based on age and organization
     const dailyLimit = getDailyPitchLimit(pitcher.age, organization);
-    console.log(`[Available Pitches Debug] ${pitcher.fullName}, Age ${pitcher.age}, Org: ${organization}, Daily Limit: ${dailyLimit}`);
     let available = dailyLimit;
     
     // Get current date
@@ -1530,10 +1529,11 @@ export default function PitchTracker() {
           newStrikes++;
         }
         // Foul ball never completes an at-bat
-      } else if (['strike', 'ballInPlay', 'out'].includes(outcome)) {
+      } else if (outcome === 'strike') {
         newStrikes++;
         // Don't increment firstPitchStrikes yet - wait for at-bat to complete
       }
+      // Note: 'ballInPlay' and 'out' handled below and don't increment strikes
 
       if (outcome === 'ballInPlay') {
         newBallsInPlay++;
@@ -1562,7 +1562,7 @@ export default function PitchTracker() {
         newStrikes = 0;
         newBatterHand = null;
         
-        if (newOuts % 3 === 0 && window.confirm('End of Inning?')) {
+        if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
           setGameState({
             ...gameState,
             inning: gameState.inning + 1,
@@ -1580,35 +1580,66 @@ export default function PitchTracker() {
           return;
         }
       } else if (newStrikes >= 3) {
-        newOuts++;
-        newBattersFaced++;
-        newAtBats++;
-        atBatCompletes = true;
+        // Strikeout - but could be uncaught third strike
+        const currentOuts = newOuts; // Store outs before potential increment
         
-        // NOW update stats since at-bat is complete
-        if (wasFirstPitchStrike) newFirstPitchStrikes++;
-        if (newBalls === 3) newThreeBallCounts++;
+        // Ask if batter reached on uncaught third strike
+        let reachedBase = false;
+        if (currentOuts === 2) {
+          // Two outs - ask if this is end of inning
+          reachedBase = !window.confirm('Strikeout with 2 outs. Is this the end of the inning? (Click OK if out, Cancel if batter reached on uncaught third strike)');
+        } else {
+          // Less than 2 outs - ask if batter reached
+          reachedBase = window.confirm('Strikeout! Did the batter reach base on an uncaught third strike? (Click OK if reached base, Cancel if out)');
+        }
         
-        newBalls = 0;
-        newStrikes = 0;
-        newBatterHand = null;
-        
-        if (newOuts % 3 === 0 && window.confirm('End of Inning?')) {
-          setGameState({
-            ...gameState,
-            inning: gameState.inning + 1,
-            pitches: updatedPitches,
-            outs: newOuts,
-            battersFaced: newBattersFaced,
-            ballsInPlay: newBallsInPlay,
-            firstPitchStrikes: newFirstPitchStrikes,
-            atBats: newAtBats,
-            threeBallCounts: newThreeBallCounts,
-            balls: newBalls,
-            strikes: newStrikes,
-            batterHand: newBatterHand
-          });
-          return;
+        if (reachedBase) {
+          // Uncaught third strike - batter reached base (treat like ball in play, no out)
+          newBallsInPlay++;
+          newBattersFaced++;
+          newAtBats++;
+          atBatCompletes = true;
+          
+          // Update stats since at-bat is complete
+          if (wasFirstPitchStrike) newFirstPitchStrikes++;
+          if (newBalls === 3) newThreeBallCounts++;
+          
+          newBalls = 0;
+          newStrikes = 0;
+          newBatterHand = null;
+        } else {
+          // Normal strikeout - batter is out
+          newOuts++;
+          newBattersFaced++;
+          newAtBats++;
+          atBatCompletes = true;
+          
+          // NOW update stats since at-bat is complete
+          if (wasFirstPitchStrike) newFirstPitchStrikes++;
+          if (newBalls === 3) newThreeBallCounts++;
+          
+          newBalls = 0;
+          newStrikes = 0;
+          newBatterHand = null;
+          
+          // Check for end of inning (after confirming the out)
+          if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
+            setGameState({
+              ...gameState,
+              inning: gameState.inning + 1,
+              pitches: updatedPitches,
+              outs: newOuts,
+              battersFaced: newBattersFaced,
+              ballsInPlay: newBallsInPlay,
+              firstPitchStrikes: newFirstPitchStrikes,
+              atBats: newAtBats,
+              threeBallCounts: newThreeBallCounts,
+              balls: newBalls,
+              strikes: newStrikes,
+              batterHand: newBatterHand
+            });
+            return;
+          }
         }
       } else if (newBalls >= 4) {
         newBattersFaced++;
@@ -1685,10 +1716,13 @@ export default function PitchTracker() {
             strikes++;
           }
           // Foul never completes at-bat
-        } else if (['strike', 'ballInPlay', 'out'].includes(pitch.outcome)) {
+        } else if (pitch.outcome === 'strike') {
           strikes++;
-          
-          if (pitch.outcome === 'ballInPlay') {
+          // Strike increments count, at-bat continues
+        }
+        
+        // Handle outcomes that complete at-bat
+        if (pitch.outcome === 'ballInPlay') {
             // Ball in play - at-bat completes
             if (wasFirstPitchStrike) firstPitchStrikes++;
             if (balls === 3) threeBallCounts++;
@@ -1715,8 +1749,8 @@ export default function PitchTracker() {
             if (outs % 3 === 0) {
               inning++;
             }
-          } else if (strikes >= 3) {
-            // Strikeout - at-bat completes
+          } else if (pitch.outcome === 'strike' && strikes >= 3) {
+            // Strikeout (after strike was counted above) - at-bat completes
             if (wasFirstPitchStrike) firstPitchStrikes++;
             if (balls === 3) threeBallCounts++;
             outs++;
@@ -2753,7 +2787,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 1.6 - Updated February 21, 2026 at 6:45 PM EST
+              Version 1.6 - Updated February 21, 2026 at 2:07 PM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
               Latest: Added Pitcher Management Tab, Assign Existing Pitchers to Teams, Delete Stats feature
