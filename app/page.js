@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, ResponsiveContainer } from 'recharts';
-import { Plus, ArrowLeft, Trash2, TrendingUp, X } from 'lucide-react';
+import { Plus, ArrowLeft, Trash2, TrendingUp, X, Edit } from 'lucide-react';
 
 /* 
  * THE PITCH TRACKER - Web App with Phone Storage
@@ -39,8 +39,27 @@ export default function PitchTracker() {
   const [storageReady, setStorageReady] = useState(false);
   const [settings, setSettings] = useState({
     redThreshold: 50,    // Below this = RED
-    yellowThreshold: 65  // Below this = YELLOW, above = GREEN
+    yellowThreshold: 65, // Below this = YELLOW, above = GREEN
+    customPitchRules: null // Custom pitch count rules (if null, use defaults)
   });
+
+  // Default pitch count rules (MLB Pitch Smart / USA Baseball)
+  const defaultPitchRules = {
+    name: 'MLB Pitch Smart / USA Baseball',
+    dailyLimits: [
+      { maxAge: 8, pitches: 50 },
+      { maxAge: 10, pitches: 75 },
+      { maxAge: 12, pitches: 85 },
+      { maxAge: 14, pitches: 95 },
+      { maxAge: 99, pitches: 105 }
+    ],
+    restDays: [
+      { maxPitches: 20, days: 1 },
+      { maxPitches: 40, days: 2 },
+      { maxPitches: 60, days: 3 },
+      { maxPitches: 999, days: 4 }
+    ]
+  };
 
   const organizations = [
     'USA Baseball', 'MLB/Pitch Smart', 'Little League Baseball', 'PONY Baseball',
@@ -49,6 +68,116 @@ export default function PitchTracker() {
   ];
 
   const pitchTypes = ['4-Seam', '2-Seam', 'Curve', 'Slider', 'Change', 'Splitter', 'Cutter', 'Knuckle'];
+
+  // Get daily pitch limit based on age and organization
+  const getDailyPitchLimit = (age, organization) => {
+    // Check for custom rules first
+    if (settings.customPitchRules) {
+      const rules = settings.customPitchRules.dailyLimits;
+      for (let i = 0; i < rules.length; i++) {
+        if (age <= rules[i].maxAge) {
+          return rules[i].pitches;
+        }
+      }
+      return rules[rules.length - 1].pitches; // Fallback to highest age bracket
+    }
+    
+    // Default to MLB Pitch Smart if no organization specified
+    const org = organization || 'MLB/Pitch Smart';
+    
+    // MLB Pitch Smart / USA Baseball (most common)
+    if (org === 'MLB/Pitch Smart' || org === 'USA Baseball') {
+      if (age <= 8) return 50;
+      if (age <= 10) return 75;
+      if (age <= 12) return 85;
+      if (age <= 14) return 95;
+      return 105; // 15+
+    }
+    
+    // Little League Baseball
+    if (org === 'Little League Baseball') {
+      if (age <= 10) return 75;
+      if (age <= 12) return 85;
+      return 95; // 13+
+    }
+    
+    // NFHS (High School)
+    if (org === 'NFHS') {
+      return 105; // All high school ages
+    }
+    
+    // USSSA
+    if (org === 'USSSA') {
+      if (age <= 8) return 50;
+      if (age <= 10) return 75;
+      if (age <= 12) return 85;
+      if (age <= 14) return 95;
+      return 105; // 15+
+    }
+    
+    // PONY Baseball
+    if (org === 'PONY Baseball') {
+      if (age <= 10) return 75;
+      if (age <= 12) return 85;
+      if (age <= 14) return 95;
+      return 105; // 15+
+    }
+    
+    // Default to MLB Pitch Smart rules
+    if (age <= 8) return 50;
+    if (age <= 10) return 75;
+    if (age <= 12) return 85;
+    if (age <= 14) return 95;
+    return 105; // 15+
+  };
+
+  // Get required rest days based on pitch count and age
+  const getRequiredRestDays = (pitchCount, age, organization) => {
+    // Check for custom rules first
+    if (settings.customPitchRules) {
+      const rules = settings.customPitchRules.restDays;
+      for (let i = 0; i < rules.length; i++) {
+        if (pitchCount <= rules[i].maxPitches) {
+          return rules[i].days;
+        }
+      }
+      return rules[rules.length - 1].days; // Fallback to highest bracket
+    }
+    
+    const org = organization || 'MLB/Pitch Smart';
+    
+    // MLB Pitch Smart / USA Baseball
+    if (org === 'MLB/Pitch Smart' || org === 'USA Baseball' || org === 'USSSA') {
+      if (pitchCount >= 61) return 4;
+      if (pitchCount >= 41) return 3;
+      if (pitchCount >= 21) return 2;
+      if (pitchCount >= 1) return 1;
+      return 0;
+    }
+    
+    // Little League Baseball
+    if (org === 'Little League Baseball') {
+      if (pitchCount >= 61) return 3;
+      if (pitchCount >= 41) return 2;
+      if (pitchCount >= 21) return 1;
+      return 0;
+    }
+    
+    // NFHS
+    if (org === 'NFHS') {
+      if (pitchCount >= 76) return 3;
+      if (pitchCount >= 51) return 2;
+      if (pitchCount >= 31) return 1;
+      return 0;
+    }
+    
+    // Default to MLB Pitch Smart
+    if (pitchCount >= 61) return 4;
+    if (pitchCount >= 41) return 3;
+    if (pitchCount >= 21) return 2;
+    if (pitchCount >= 1) return 1;
+    return 0;
+  };
 
   // Get strike percentage color based on settings
   const getStrikeColor = (percentage) => {
@@ -77,9 +206,14 @@ export default function PitchTracker() {
   };
 
   // Calculate available pitches including ONLY game pitches (not training)
-  const calculateAvailablePitches = (pitcher) => {
-    // Start with base availability
-    let available = pitcher.availableToday || 85;
+  const calculateAvailablePitches = (pitcher, teamOrganization = null) => {
+    // Get the team this pitcher belongs to for organization
+    const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcher.id));
+    const organization = teamOrganization || pitcherTeam?.organization || 'MLB/Pitch Smart';
+    
+    // Get daily limit based on age and organization
+    const dailyLimit = getDailyPitchLimit(pitcher.age, organization);
+    let available = dailyLimit;
     
     // Get current date
     const today = new Date();
@@ -91,23 +225,46 @@ export default function PitchTracker() {
       p.birthday === pitcher.birthday
     );
     
-    // Check ONLY games in last 4 days across ALL instances of this pitcher
+    // Check games and calculate rest requirements
+    let pitchesUsedInWindow = 0;
+    let needsRestUntil = null;
+    
     samePitchers.forEach(p => {
       if (p.games && p.games.length > 0) {
         p.games.forEach(game => {
           const gameDate = new Date(game.date);
           gameDate.setHours(0, 0, 0, 0);
           
-          const daysDiff = Math.floor((today - gameDate) / (1000 * 60 * 60 * 24));
+          const daysSinceGame = Math.floor((today - gameDate) / (1000 * 60 * 60 * 24));
+          const pitchCount = game.totalPitches || 0;
           
-          // If game was within last 4 days, subtract from availability
-          if (daysDiff >= 0 && daysDiff <= 4) {
-            const pitchCount = game.totalPitches || 0;
-            available -= pitchCount;
+          // Check if still in rest period
+          const restDaysRequired = getRequiredRestDays(pitchCount, pitcher.age, organization);
+          const restUntilDate = new Date(gameDate);
+          restUntilDate.setDate(restUntilDate.getDate() + restDaysRequired);
+          
+          if (today < restUntilDate) {
+            // Still in mandatory rest period
+            if (!needsRestUntil || restUntilDate > needsRestUntil) {
+              needsRestUntil = restUntilDate;
+            }
+          }
+          
+          // Count pitches in rolling 4-day window for availability calculation
+          if (daysSinceGame >= 0 && daysSinceGame <= 4) {
+            pitchesUsedInWindow += pitchCount;
           }
         });
       }
     });
+    
+    // If in mandatory rest period, return 0
+    if (needsRestUntil) {
+      return 0;
+    }
+    
+    // Subtract pitches used in last 4 days from daily limit
+    available = dailyLimit - pitchesUsedInWindow;
     
     return Math.max(0, available);
   };
@@ -231,6 +388,7 @@ export default function PitchTracker() {
   // Dashboard
   const Dashboard = () => {
     const [showAddTeam, setShowAddTeam] = useState(false);
+    const [editingTeam, setEditingTeam] = useState(null);
     const [newTeam, setNewTeam] = useState({ 
       name: '', 
       organization: '', 
@@ -241,18 +399,46 @@ export default function PitchTracker() {
       coach2Phone: ''
     });
 
+    const startEditTeam = (team, e) => {
+      e.stopPropagation();
+      setEditingTeam(team.id);
+      setNewTeam({
+        name: team.name,
+        organization: team.organization,
+        ageGroup: team.ageGroup,
+        coach1Name: team.coach1Name || '',
+        coach1Phone: team.coach1Phone || '',
+        coach2Name: team.coach2Name || '',
+        coach2Phone: team.coach2Phone || ''
+      });
+      setShowAddTeam(true);
+    };
+
     const handleAddTeam = (e) => {
       e.preventDefault();
-      if (teams.length >= 5) {
-        alert('Maximum 5 teams per season.');
-        return;
+      
+      if (editingTeam) {
+        // Update existing team
+        setTeams(teams.map(t => 
+          t.id === editingTeam 
+            ? { ...t, ...newTeam }
+            : t
+        ));
+        setEditingTeam(null);
+      } else {
+        // Add new team
+        if (teams.length >= 5) {
+          alert('Maximum 5 teams per season.');
+          return;
+        }
+        const team = {
+          id: Date.now(),
+          ...newTeam,
+          pitcherIds: []
+        };
+        setTeams([...teams, team]);
       }
-      const team = {
-        id: Date.now(),
-        ...newTeam,
-        pitcherIds: []
-      };
-      setTeams([...teams, team]);
+      
       setNewTeam({ 
         name: '', 
         organization: '', 
@@ -273,7 +459,7 @@ export default function PitchTracker() {
     };
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-32">
+      <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
           <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
             <p className="font-bold text-blue-900">📊 The Pitch Tracker - Demo Version</p>
@@ -296,7 +482,7 @@ export default function PitchTracker() {
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
               <div className="bg-white rounded-lg p-6 max-w-md w-full my-8 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
-                  <h2 className="text-2xl font-bold">Add New Team</h2>
+                  <h2 className="text-2xl font-bold">{editingTeam ? 'Edit Team' : 'Add New Team'}</h2>
                   <button onClick={() => setShowAddTeam(false)} className="text-gray-500 hover:text-gray-700">
                     <X size={24} />
                   </button>
@@ -390,7 +576,7 @@ export default function PitchTracker() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-3 mt-6 pt-4 pb-20 sticky bottom-0 bg-white border-t">
+                  <div className="flex gap-3 mt-6 pt-4 pb-16 sticky bottom-0 bg-white border-t">
                     <button
                       type="button"
                       onClick={() => setShowAddTeam(false)}
@@ -402,7 +588,7 @@ export default function PitchTracker() {
                       type="submit"
                       className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                     >
-                      Create Team
+                      {editingTeam ? 'Save Changes' : 'Create Team'}
                     </button>
                   </div>
                 </form>
@@ -447,6 +633,13 @@ export default function PitchTracker() {
                       </div>
                     </div>
                     <button
+                      onClick={(e) => startEditTeam(team, e)}
+                      className="absolute top-4 right-12 text-blue-600 hover:text-blue-800"
+                      title="Edit team"
+                    >
+                      <Edit size={20} />
+                    </button>
+                    <button
                       onClick={(e) => deleteTeam(team.id, e)}
                       className="absolute top-4 right-4 text-red-600 hover:text-red-800"
                       title="Delete team"
@@ -466,6 +659,8 @@ export default function PitchTracker() {
   // Team View
   const TeamView = () => {
     const [showAddPitcher, setShowAddPitcher] = useState(false);
+    const [editingPitcher, setEditingPitcher] = useState(null);
+    const [teamTab, setTeamTab] = useState('roster'); // 'roster' or 'available'
     const [newPitcher, setNewPitcher] = useState({
       fullName: '',
       birthday: '',
@@ -476,22 +671,53 @@ export default function PitchTracker() {
 
     const teamPitchers = allPitchers.filter(p => currentTeam.pitcherIds.includes(p.id));
 
+    const startEditPitcher = (pitcher) => {
+      setEditingPitcher(pitcher.id);
+      setNewPitcher({
+        fullName: pitcher.fullName,
+        birthday: pitcher.birthday,
+        selectedPitches: pitcher.pitchArsenal || [],
+        coachPhone: pitcher.coachPhone || '',
+        playerPhone: pitcher.playerPhone || ''
+      });
+      setShowAddPitcher(true);
+    };
+
     const handleAddPitcher = (e) => {
       e.preventDefault();
-      if (teamPitchers.length >= 15) {
-        alert('Maximum 15 pitchers per team.');
-        return;
-      }
+      
+      if (editingPitcher) {
+        // Update existing pitcher
+        setAllPitchers(allPitchers.map(p => 
+          p.id === editingPitcher
+            ? {
+                ...p,
+                fullName: newPitcher.fullName,
+                birthday: newPitcher.birthday,
+                age: calculateAge(newPitcher.birthday),
+                pitchArsenal: newPitcher.selectedPitches,
+                coachPhone: newPitcher.coachPhone,
+                playerPhone: newPitcher.playerPhone
+              }
+            : p
+        ));
+        setEditingPitcher(null);
+      } else {
+        // Add new pitcher
+        if (teamPitchers.length >= 15) {
+          alert('Maximum 15 pitchers per team.');
+          return;
+        }
 
-      const pitcher = {
-        id: Date.now(),
-        fullName: newPitcher.fullName,
-        birthday: newPitcher.birthday,
-        age: calculateAge(newPitcher.birthday),
-        pitchArsenal: newPitcher.selectedPitches,
-        coachPhone: newPitcher.coachPhone,
-        playerPhone: newPitcher.playerPhone,
-        games: [],
+        const pitcher = {
+          id: Date.now(),
+          fullName: newPitcher.fullName,
+          birthday: newPitcher.birthday,
+          age: calculateAge(newPitcher.birthday),
+          pitchArsenal: newPitcher.selectedPitches,
+          coachPhone: newPitcher.coachPhone,
+          playerPhone: newPitcher.playerPhone,
+          games: [],
         trainingSessions: [],
         availableToday: 85
       };
@@ -576,7 +802,7 @@ export default function PitchTracker() {
     };
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-32">
+      <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-4 mb-6">
             <button
@@ -591,8 +817,34 @@ export default function PitchTracker() {
             </div>
           </div>
 
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Pitchers ({teamPitchers.length}/15)</h2>
+          {/* Tabs */}
+          <div className="flex gap-2 mb-4 border-b">
+            <button
+              onClick={() => setTeamTab('roster')}
+              className={`px-4 py-2 font-semibold ${
+                teamTab === 'roster'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              📋 Roster
+            </button>
+            <button
+              onClick={() => setTeamTab('available')}
+              className={`px-4 py-2 font-semibold ${
+                teamTab === 'available'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              ⚾ Available Pitchers
+            </button>
+          </div>
+
+          {teamTab === 'roster' && (
+            <>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">Pitchers ({teamPitchers.length}/15)</h2>
             <div className="flex gap-2">
               {teamPitchers.length < 15 && (
                 <button
@@ -626,7 +878,7 @@ export default function PitchTracker() {
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
               <div className="bg-white rounded-lg p-6 max-w-md w-full my-8">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold">Add Pitcher</h2>
+                  <h2 className="text-2xl font-bold">{editingPitcher ? 'Edit Pitcher' : 'Add Pitcher'}</h2>
                   <button onClick={() => {
                     setShowAddPitcher(false);
                     setNewPitcher({ fullName: '', birthday: '', selectedPitches: [] });
@@ -709,7 +961,7 @@ export default function PitchTracker() {
                       type="submit"
                       className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                     >
-                      Add to Roster
+                      {editingPitcher ? 'Save Changes' : 'Add to Roster'}
                     </button>
                   </div>
                 </form>
@@ -729,11 +981,18 @@ export default function PitchTracker() {
                 const bestPitches = getBestPitches(pitcher);
                 const last3Outings = pitcher.games ? pitcher.games.slice(-3).map(g => g.totalPitches).reverse() : [];
                 const last5Days = pitcher.games ? pitcher.games.slice(-5).reduce((sum, g) => sum + g.totalPitches, 0) : 0;
-                const availablePitches = calculateAvailablePitches(pitcher);
+                const availablePitches = calculateAvailablePitches(pitcher, currentTeam.organization);
                 const trainingLast3Days = getTrainingPitchesLast3Days(pitcher);
 
                 return (
                   <div key={pitcher.id} className="bg-white rounded-lg p-4 shadow hover:shadow-lg transition relative">
+                    <button
+                      onClick={() => startEditPitcher(pitcher)}
+                      className="absolute top-4 right-12 text-blue-600 hover:text-blue-800"
+                      title="Edit pitcher"
+                    >
+                      <Edit size={18} />
+                    </button>
                     <button
                       onClick={() => deletePitcher(pitcher.id)}
                       className="absolute top-4 right-4 text-red-600 hover:text-red-800"
@@ -774,6 +1033,101 @@ export default function PitchTracker() {
               })
             )}
           </div>
+            </>
+          )}
+
+          {/* Available Pitchers Tab */}
+          {teamTab === 'available' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-lg p-6 shadow">
+                <h2 className="text-xl font-bold mb-4">Available Pitchers - Ranked</h2>
+                <p className="text-sm text-gray-600 mb-4">
+                  Ranked by: 1) Available pitches 2) Strike % 3) First pitch strike % 4) Lowest walk %
+                </p>
+
+                {(() => {
+                  const pitchersWithStats = teamPitchers.map(pitcher => {
+                    const available = calculateAvailablePitches(pitcher, currentTeam.organization);
+                    
+                    let strikePercent = 0;
+                    if (pitcher.games && pitcher.games.length > 0) {
+                      const totalPitches = pitcher.games.reduce((sum, g) => sum + (g.totalPitches || 0), 0);
+                      const totalStrikes = pitcher.games.reduce((sum, g) => sum + (g.strikes || 0), 0);
+                      strikePercent = totalPitches > 0 ? (totalStrikes / totalPitches) * 100 : 0;
+                    } else if (pitcher.trainingSessions && pitcher.trainingSessions.length > 0) {
+                      const allPitches = pitcher.trainingSessions.flatMap(s => s.pitchData || []);
+                      const strikes = allPitches.filter(p => p.result === 'strike').length;
+                      strikePercent = allPitches.length > 0 ? (strikes / allPitches.length) * 100 : 0;
+                    }
+                    
+                    let firstPitchStrikePercent = 0;
+                    if (pitcher.games && pitcher.games.length > 0) {
+                      const totalAtBats = pitcher.games.reduce((sum, g) => sum + (g.atBats || 0), 0);
+                      const firstPitchStrikes = pitcher.games.reduce((sum, g) => sum + (g.firstPitchStrikes || 0), 0);
+                      firstPitchStrikePercent = totalAtBats > 0 ? (firstPitchStrikes / totalAtBats) * 100 : 0;
+                    }
+                    
+                    let walkPercent = 0;
+                    if (pitcher.games && pitcher.games.length > 0) {
+                      const totalBatters = pitcher.games.reduce((sum, g) => sum + (g.battersFaced || 0), 0);
+                      const outs = pitcher.games.reduce((sum, g) => {
+                        const innings = g.innings || 0;
+                        return sum + (Math.floor(innings) * 3 + Math.round((innings % 1) * 10));
+                      }, 0);
+                      const ballsInPlay = pitcher.games.reduce((sum, g) => sum + (g.ballsInPlay || 0), 0);
+                      const walks = Math.max(0, totalBatters - outs - ballsInPlay);
+                      walkPercent = totalBatters > 0 ? (walks / totalBatters) * 100 : 0;
+                    }
+                    
+                    return { pitcher, available, strikePercent, firstPitchStrikePercent, walkPercent, hasGameData: pitcher.games && pitcher.games.length > 0 };
+                  });
+
+                  const ranked = pitchersWithStats.sort((a, b) => {
+                    if (a.available !== b.available) return b.available - a.available;
+                    if (Math.abs(a.strikePercent - b.strikePercent) > 0.5) return b.strikePercent - a.strikePercent;
+                    if (Math.abs(a.firstPitchStrikePercent - b.firstPitchStrikePercent) > 0.5) return b.firstPitchStrikePercent - a.firstPitchStrikePercent;
+                    return a.walkPercent - b.walkPercent;
+                  });
+
+                  if (ranked.length === 0) return <div className="text-center py-8 text-gray-500">No pitchers on roster yet.</div>;
+
+                  return (
+                    <div className="space-y-3">
+                      {ranked.map((stats, index) => (
+                        <div key={stats.pitcher.id} className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-2xl font-bold text-blue-600">#{index + 1}</span>
+                            <div>
+                              <h3 className="font-bold text-lg">{stats.pitcher.fullName}, Age {stats.pitcher.age}</h3>
+                              <p className="text-sm text-gray-600">{stats.hasGameData ? '📊 Game Stats' : '🏋️ Training Stats'}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 mt-3">
+                            <div className="bg-white p-2 rounded">
+                              <p className="text-xs text-gray-600">Available Today</p>
+                              <p className="text-lg font-bold text-green-600">{stats.available} pitches</p>
+                            </div>
+                            <div className="bg-white p-2 rounded">
+                              <p className="text-xs text-gray-600">Strike %</p>
+                              <p className="text-lg font-bold"><StrikeBadge percentage={Math.round(stats.strikePercent)} /></p>
+                            </div>
+                            <div className="bg-white p-2 rounded">
+                              <p className="text-xs text-gray-600">First Pitch Strike %</p>
+                              <p className="text-lg font-bold text-blue-600">{Math.round(stats.firstPitchStrikePercent)}%</p>
+                            </div>
+                            <div className="bg-white p-2 rounded">
+                              <p className="text-xs text-gray-600">Walk %</p>
+                              <p className="text-lg font-bold text-red-600">{Math.round(stats.walkPercent)}%</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -788,7 +1142,7 @@ export default function PitchTracker() {
       });
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-32">
+        <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center gap-4 mb-6">
               <button
@@ -893,10 +1247,27 @@ export default function PitchTracker() {
       let newThreeBallCounts = gameState.threeBallCounts;
       let newBatterHand = gameState.batterHand;
       
+      // Track if this was a first pitch strike (before we know if at-bat completes)
+      let wasFirstPitchStrike = false;
+      if (isFirstPitch && ['strike', 'ballInPlay', 'out', 'foul'].includes(outcome)) {
+        wasFirstPitchStrike = true;
+      }
+      
       // Track if at-bat will complete (don't update stats mid at-bat)
       let atBatCompletes = false;
 
       if (outcome === 'ball') {
+        newBalls++;
+        // Don't increment threeBallCounts yet - wait for at-bat to complete
+      } else if (outcome === 'foul') {
+        // Foul ball logic:
+        // - Always counts as a strike UNLESS already at 2 strikes
+        // - On 2 strikes, foul just adds to pitch count (no change to count)
+        if (newStrikes < 2) {
+          newStrikes++;
+        }
+        // Foul ball never completes an at-bat
+      } else if (['strike', 'ballInPlay', 'out'].includes(outcome)) {
         newBalls++;
         // Don't increment threeBallCounts yet - wait for at-bat to complete
       } else if (['strike', 'ballInPlay', 'out'].includes(outcome)) {
@@ -911,7 +1282,7 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
-        if (isFirstPitch) newFirstPitchStrikes++;
+        if (wasFirstPitchStrike) newFirstPitchStrikes++;
         if (newBalls === 3) newThreeBallCounts++;
         
         newBalls = 0;
@@ -924,7 +1295,7 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
-        if (isFirstPitch) newFirstPitchStrikes++;
+        if (wasFirstPitchStrike) newFirstPitchStrikes++;
         if (newBalls === 3) newThreeBallCounts++;
         
         newBalls = 0;
@@ -955,7 +1326,7 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
-        if (isFirstPitch) newFirstPitchStrikes++;
+        if (wasFirstPitchStrike) newFirstPitchStrikes++;
         if (newBalls === 3) newThreeBallCounts++;
         
         newBalls = 0;
@@ -985,7 +1356,7 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
-        if (isFirstPitch) newFirstPitchStrikes++;
+        if (wasFirstPitchStrike) newFirstPitchStrikes++;
         if (newBalls === 3) newThreeBallCounts++;  // Was 3 before the 4th ball
         
         newBalls = 0;
@@ -1156,7 +1527,7 @@ export default function PitchTracker() {
     };
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-32">
+      <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
           <div className="text-sm text-gray-600 mb-4">
             {pitcher.fullName} | {currentTeam.name} | {new Date().toLocaleDateString()}
@@ -1205,11 +1576,14 @@ export default function PitchTracker() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 mb-3">
+            <button onClick={undoLastPitch} className="bg-yellow-500 text-white py-2 rounded-lg font-semibold text-sm hover:bg-yellow-600">↶ UNDO</button>
+            <button onClick={() => recordPitch('foul')} className="bg-orange-400 text-white py-2 rounded-lg font-semibold text-sm hover:bg-orange-500">FOUL BALL</button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-4">
             <button onClick={endInning} className="bg-gray-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-gray-700">END INNING</button>
             <button onClick={endOuting} className="bg-orange-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-orange-700">END OUTING</button>
           </div>
-
-          <button onClick={undoLastPitch} className="w-full bg-yellow-500 text-white py-2 rounded-lg font-semibold text-sm mb-4 hover:bg-yellow-600">↶ UNDO</button>
 
           <div className="bg-white rounded-lg p-4 shadow mb-4">
             <h3 className="font-bold mb-3">Live Stats</h3>
@@ -1268,8 +1642,91 @@ export default function PitchTracker() {
     const unavailableToday = teamPitchers.filter(p => calculateAvailablePitches(p) <= 0);
     const availableToday = teamPitchers.filter(p => calculateAvailablePitches(p) > 0);
 
+    // Generate game report text
+    const generateGameReport = () => {
+      let report = 'GAME SUMMARY REPORT\n';
+      report += `Team: ${currentTeam.name}\n`;
+      report += `Date: ${new Date().toLocaleDateString()}\n\n`;
+      
+      report += 'TEAM PITCHING TOTALS:\n';
+      report += `Total Pitches: ${teamTotals.totalPitches}\n`;
+      report += `Strike %: ${teamStrikePercent}%\n`;
+      report += `Batters Faced: ${teamTotals.battersFaced}\n`;
+      report += `Outs Recorded: ${teamTotals.outs}\n`;
+      report += `vs RHB: ${teamRhbPercent}% | vs LHB: ${teamLhbPercent}%\n\n`;
+      
+      report += 'INDIVIDUAL PITCHER LINES:\n';
+      gamePitchers.forEach(p => {
+        report += `${p.pitcher.fullName}: ${p.gameData.totalPitches} pitches | ${p.gameData.innings} IP | ${p.gameData.strikePercent}% strikes\n`;
+      });
+      report += '\n';
+      
+      report += 'PITCHER AVAILABILITY:\n\n';
+      
+      if (unavailableToday.length > 0) {
+        report += 'NEEDS REST:\n';
+        unavailableToday.forEach(p => {
+          const lastGame = p.games?.[p.games.length - 1];
+          const pitchCount = lastGame?.totalPitches || 0;
+          const restDays = getRequiredRestDays(pitchCount, p.age, currentTeam.organization);
+          const nextAvailable = new Date();
+          nextAvailable.setDate(nextAvailable.getDate() + restDays);
+          report += `• ${p.fullName}\n  Last outing: ${pitchCount} pitches\n  Rest required: ${restDays} days\n  Next available: ${nextAvailable.toLocaleDateString()}\n\n`;
+        });
+      }
+      
+      if (availableToday.length > 0) {
+        report += 'AVAILABLE NOW:\n';
+        availableToday.forEach(p => {
+          const available = calculateAvailablePitches(p, currentTeam.organization);
+          report += `• ${p.fullName} - ${available} pitches available\n`;
+        });
+      }
+      
+      return report;
+    };
+
+    const shareGameReport = () => {
+      const report = generateGameReport();
+      
+      if (navigator.share) {
+        navigator.share({
+          title: 'Game Summary Report',
+          text: report
+        }).catch((error) => {
+          if (error.name !== 'AbortError') {
+            alert('Could not share. Please try copy to clipboard instead.');
+          }
+        });
+      } else {
+        alert('Share not supported on this device. Use "Copy to Clipboard" instead.');
+      }
+    };
+
+    const textCoach1 = () => {
+      if (!currentTeam.coach1Phone) {
+        alert('No Coach 1 phone number on file for this team.');
+        return;
+      }
+      
+      const report = generateGameReport();
+      const smsUrl = `sms:${currentTeam.coach1Phone}${/iPhone|iPad|iPod/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(report)}`;
+      window.location.href = smsUrl;
+    };
+
+    const textCoach2 = () => {
+      if (!currentTeam.coach2Phone) {
+        alert('No Coach 2 phone number on file for this team.');
+        return;
+      }
+      
+      const report = generateGameReport();
+      const smsUrl = `sms:${currentTeam.coach2Phone}${/iPhone|iPad|iPod/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(report)}`;
+      window.location.href = smsUrl;
+    };
+
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-32">
+      <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6">Game Summary</h1>
           
@@ -1307,7 +1764,7 @@ export default function PitchTracker() {
                   {unavailableToday.map(p => {
                     const lastGame = p.games?.[p.games.length - 1];
                     const pitchCount = lastGame?.totalPitches || 0;
-                    const restDays = pitchCount >= 51 ? 3 : pitchCount >= 36 ? 2 : 1;
+                    const restDays = getRequiredRestDays(pitchCount, p.age, currentTeam.organization);
                     const nextAvailable = new Date();
                     nextAvailable.setDate(nextAvailable.getDate() + restDays);
                     
@@ -1329,7 +1786,7 @@ export default function PitchTracker() {
                 <h3 className="font-semibold mb-2 text-green-600">Available Now:</h3>
                 <div className="space-y-1 mb-4">
                   {availableToday.map(p => {
-                    const available = calculateAvailablePitches(p);
+                    const available = calculateAvailablePitches(p, currentTeam.organization);
                     return (
                       <p key={p.id} className="text-sm text-green-600">
                         • {p.fullName} - {available} pitches available
@@ -1392,6 +1849,22 @@ export default function PitchTracker() {
             >
               📋 Copy Complete Game Report
             </button>
+
+            <button onClick={shareGameReport} className="w-full bg-purple-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-purple-700 mb-3">
+              📤 Share Report
+            </button>
+
+            {currentTeam.coach1Phone && (
+              <button onClick={textCoach1} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 mb-3">
+                💬 Text {currentTeam.coach1Name || 'Coach 1'} ({currentTeam.coach1Phone})
+              </button>
+            )}
+
+            {currentTeam.coach2Phone && (
+              <button onClick={textCoach2} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 mb-3">
+                💬 Text {currentTeam.coach2Name || 'Coach 2'} ({currentTeam.coach2Phone})
+              </button>
+            )}
           </div>
 
           <button
@@ -1642,7 +2115,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       const stats = getSessionStats(sessionPitches);
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-32">
+        <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
           <div className="max-w-4xl mx-auto">
             <h1 className="text-3xl font-bold mb-6">Training Session Summary</h1>
             
@@ -1714,7 +2187,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       const progressText = stats.total >= 45 ? 'font-bold text-orange-600' : '';
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-32">
+        <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
           <div className="max-w-4xl mx-auto">
             <div className="mb-4">
               <h2 className="text-2xl font-bold">{selectedPitcher.fullName}</h2>
@@ -1788,7 +2261,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       const sessions = selectedPitcher.trainingSessions || [];
 
       return (
-        <div className="min-h-screen bg-gray-100 p-4 pb-32">
+        <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center gap-4 mb-6">
               <button onClick={() => setShowHistory(false)} className="text-blue-600 hover:text-blue-800"><ArrowLeft size={24} /></button>
@@ -1832,7 +2305,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
     }
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-32">
+      <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6">Training</h1>
 
@@ -1927,7 +2400,8 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
   // Settings View
   const SettingsView = () => {
     const [tempSettings, setTempSettings] = useState({ ...settings });
-    const [showPreview, setShowPreview] = useState(false);
+    const [showPitchRulesEditor, setShowPitchRulesEditor] = useState(false);
+    const [editingRules, setEditingRules] = useState(null);
 
     const saveSettings = () => {
       // Validate thresholds
@@ -1948,7 +2422,8 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       if (window.confirm('Reset to default color thresholds?')) {
         const defaults = {
           redThreshold: 50,
-          yellowThreshold: 65
+          yellowThreshold: 65,
+          customPitchRules: null
         };
         setTempSettings(defaults);
         setSettings(defaults);
@@ -1956,17 +2431,36 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
       }
     };
 
-    // Get color for preview
-    const getPreviewColor = (percentage) => {
-      if (percentage < tempSettings.redThreshold) return { bg: '#DC3545', text: 'white', label: 'RED' };
-      if (percentage < tempSettings.yellowThreshold) return { bg: '#FFC107', text: 'black', label: 'YELLOW' };
-      return { bg: '#28A745', text: 'white', label: 'GREEN' };
+    const openPitchRulesEditor = () => {
+      // Start with current custom rules or defaults
+      const currentRules = tempSettings.customPitchRules || defaultPitchRules;
+      setEditingRules(JSON.parse(JSON.stringify(currentRules))); // Deep copy
+      setShowPitchRulesEditor(true);
     };
 
-    const previewPercentages = [30, 40, 50, 55, 60, 65, 70, 75, 80, 85, 90];
+    const savePitchRules = () => {
+      setTempSettings({ ...tempSettings, customPitchRules: editingRules });
+      setSettings({ ...tempSettings, customPitchRules: editingRules });
+      setShowPitchRulesEditor(false);
+      alert('Custom pitch count rules saved!');
+    };
+
+    const resetPitchRulesToDefaults = () => {
+      if (window.confirm('Reset pitch count rules to MLB Pitch Smart defaults?')) {
+        setEditingRules(JSON.parse(JSON.stringify(defaultPitchRules)));
+      }
+    };
+
+    const useDefaultPitchRules = () => {
+      if (window.confirm('Remove custom rules and use organization-based defaults?')) {
+        setTempSettings({ ...tempSettings, customPitchRules: null });
+        setSettings({ ...tempSettings, customPitchRules: null });
+        alert('Now using organization-based pitch count rules.');
+      }
+    };
 
     return (
-      <div className="min-h-screen bg-gray-100 p-4 pb-32">
+      <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6">⚙️ Settings</h1>
 
@@ -2056,42 +2550,44 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
               </div>
             </div>
 
-            {/* Preview Toggle */}
-            <button
-              onClick={() => setShowPreview(!showPreview)}
-              className="w-full mt-6 bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700"
-            >
-              {showPreview ? 'Hide Preview' : 'Show Preview'}
-            </button>
-
-            {/* Preview Section */}
-            {showPreview && (
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
-                <h3 className="font-bold mb-3">Preview - How Strike %'s Will Look:</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {previewPercentages.map(pct => {
-                    const colors = getPreviewColor(pct);
-                    return (
-                      <div key={pct} className="flex items-center justify-between">
-                        <span className="text-sm font-semibold">{pct}%:</span>
-                        <span style={{
-                          backgroundColor: colors.bg,
-                          color: colors.text,
-                          padding: '4px 12px',
-                          borderRadius: '4px',
-                          fontWeight: 'bold',
-                          minWidth: '60px',
-                          textAlign: 'center'
-                        }}>
-                          {pct}%
-                        </span>
-                        <span className="text-xs text-gray-600">({colors.label})</span>
-                      </div>
-                    );
-                  })}
-                </div>
+            {/* Pitch Count Rules Section */}
+            <div className="bg-white rounded-lg p-6 shadow mt-6">
+              <h2 className="text-xl font-bold mb-4">⚾ Pitch Count Rules</h2>
+              
+              <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-900">
+                  <strong>Current Mode:</strong> {tempSettings.customPitchRules ? 'Custom Rules' : 'Organization-Based (Default)'}
+                </p>
+                {!tempSettings.customPitchRules && (
+                  <p className="text-xs text-blue-700 mt-2">
+                    Using rules from each team's organization (MLB Pitch Smart, Little League, etc.)
+                  </p>
+                )}
+                {tempSettings.customPitchRules && (
+                  <p className="text-xs text-blue-700 mt-2">
+                    Using your custom rules for all teams
+                  </p>
+                )}
               </div>
-            )}
+
+              <div className="space-y-3">
+                <button
+                  onClick={openPitchRulesEditor}
+                  className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700"
+                >
+                  {tempSettings.customPitchRules ? '✏️ Edit Custom Rules' : '➕ Create Custom Rules'}
+                </button>
+
+                {tempSettings.customPitchRules && (
+                  <button
+                    onClick={useDefaultPitchRules}
+                    className="w-full bg-gray-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-gray-600"
+                  >
+                    🔄 Use Organization-Based Rules
+                  </button>
+                )}
+              </div>
+            </div>
 
             {/* Action Buttons */}
             <div className="flex gap-3 mt-6">
@@ -2133,6 +2629,130 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
             </ul>
           </div>
         </div>
+
+        {/* Pitch Rules Editor Modal */}
+        {showPitchRulesEditor && editingRules && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-lg p-6 max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
+                <h2 className="text-2xl font-bold">Edit Pitch Count Rules</h2>
+                <button onClick={() => setShowPitchRulesEditor(false)} className="text-gray-500 hover:text-gray-700">
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* Daily Pitch Limits */}
+              <div className="mb-6">
+                <h3 className="font-bold text-lg mb-3">Daily Pitch Limits by Age</h3>
+                <div className="space-y-3">
+                  {editingRules.dailyLimits.map((limit, index) => (
+                    <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded">
+                      <div className="flex-1">
+                        <label className="text-sm font-semibold">Max Age:</label>
+                        <input
+                          type="number"
+                          value={limit.maxAge}
+                          onChange={(e) => {
+                            const updated = [...editingRules.dailyLimits];
+                            updated[index].maxAge = parseInt(e.target.value);
+                            setEditingRules({ ...editingRules, dailyLimits: updated });
+                          }}
+                          className="w-full border rounded px-2 py-1 mt-1"
+                          min="1"
+                          max="99"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-sm font-semibold">Pitch Limit:</label>
+                        <input
+                          type="number"
+                          value={limit.pitches}
+                          onChange={(e) => {
+                            const updated = [...editingRules.dailyLimits];
+                            updated[index].pitches = parseInt(e.target.value);
+                            setEditingRules({ ...editingRules, dailyLimits: updated });
+                          }}
+                          className="w-full border rounded px-2 py-1 mt-1"
+                          min="1"
+                          max="150"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600 mt-2">
+                  💡 Example: "Max Age 10, Pitch Limit 75" means pitchers 10 and under can throw 75 pitches
+                </p>
+              </div>
+
+              {/* Rest Day Requirements */}
+              <div className="mb-6">
+                <h3 className="font-bold text-lg mb-3">Rest Days by Pitch Count</h3>
+                <div className="space-y-3">
+                  {editingRules.restDays.map((rest, index) => (
+                    <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded">
+                      <div className="flex-1">
+                        <label className="text-sm font-semibold">Up to Pitches:</label>
+                        <input
+                          type="number"
+                          value={rest.maxPitches}
+                          onChange={(e) => {
+                            const updated = [...editingRules.restDays];
+                            updated[index].maxPitches = parseInt(e.target.value);
+                            setEditingRules({ ...editingRules, restDays: updated });
+                          }}
+                          className="w-full border rounded px-2 py-1 mt-1"
+                          min="1"
+                          max="999"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-sm font-semibold">Rest Days:</label>
+                        <input
+                          type="number"
+                          value={rest.days}
+                          onChange={(e) => {
+                            const updated = [...editingRules.restDays];
+                            updated[index].days = parseInt(e.target.value);
+                            setEditingRules({ ...editingRules, restDays: updated });
+                          }}
+                          className="w-full border rounded px-2 py-1 mt-1"
+                          min="0"
+                          max="7"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600 mt-2">
+                  💡 Example: "Up to 40, Rest 2" means 1-40 pitches requires 2 days rest
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 sticky bottom-0 bg-white border-t">
+                <button
+                  onClick={resetPitchRulesToDefaults}
+                  className="flex-1 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
+                >
+                  Reset to MLB Pitch Smart
+                </button>
+                <button
+                  onClick={() => setShowPitchRulesEditor(false)}
+                  className="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={savePitchRules}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                >
+                  Save Rules
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -2140,18 +2760,18 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
   // Bottom Nav
   const BottomNav = () => (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
-      <div className="max-w-4xl mx-auto flex justify-around py-3">
-        <button onClick={() => setCurrentView('dashboard')} className={`flex flex-col items-center gap-1 px-4 py-2 ${['dashboard', 'team', 'pitchTracking', 'gameEnd'].includes(currentView) ? 'text-blue-600' : 'text-gray-600'}`}>
-          <div className="text-2xl">📊</div>
-          <span className="text-xs">Teams</span>
+      <div className="max-w-4xl mx-auto flex justify-around py-1">
+        <button onClick={() => setCurrentView('dashboard')} className={`flex flex-col items-center gap-0 px-3 py-1 ${['dashboard', 'team', 'pitchTracking', 'gameEnd'].includes(currentView) ? 'text-blue-600' : 'text-gray-600'}`}>
+          <div className="text-xl">📊</div>
+          <span className="text-[10px]">Teams</span>
         </button>
-        <button onClick={() => setCurrentView('training')} className={`flex flex-col items-center gap-1 px-4 py-2 ${currentView === 'training' ? 'text-blue-600' : 'text-gray-600'}`}>
-          <TrendingUp size={24} />
-          <span className="text-xs">Training</span>
+        <button onClick={() => setCurrentView('training')} className={`flex flex-col items-center gap-0 px-3 py-1 ${currentView === 'training' ? 'text-blue-600' : 'text-gray-600'}`}>
+          <TrendingUp size={20} />
+          <span className="text-[10px]">Training</span>
         </button>
-        <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-1 px-4 py-2 ${currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'}`}>
-          <div className="text-2xl">⚙️</div>
-          <span className="text-xs">Settings</span>
+        <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-0 px-3 py-1 ${currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'}`}>
+          <div className="text-xl">⚙️</div>
+          <span className="text-[10px]">Settings</span>
         </button>
       </div>
     </div>
