@@ -213,6 +213,7 @@ export default function PitchTracker() {
     
     // Get daily limit based on age and organization
     const dailyLimit = getDailyPitchLimit(pitcher.age, organization);
+    console.log(`[Available Pitches Debug] ${pitcher.fullName}, Age ${pitcher.age}, Org: ${organization}, Daily Limit: ${dailyLimit}`);
     let available = dailyLimit;
     
     // Get current date
