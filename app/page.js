@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, R
 import { Plus, ArrowLeft, Trash2, TrendingUp, X, Edit } from 'lucide-react';
 
 /* 
- * THE PITCH TRACKER - Web App with Phone Storage R10
+ * THE PITCH TRACKER - Web App with Phone Storage
  * 
  * FEATURES INCLUDED:
  * ✓ Team management (up to 5)
@@ -729,6 +729,8 @@ export default function PitchTracker() {
           : t
       ));
       setCurrentTeam({ ...currentTeam, pitcherIds: [...currentTeam.pitcherIds, pitcher.id] });
+      }
+      
       setNewPitcher({ fullName: '', birthday: '', selectedPitches: [], coachPhone: '', playerPhone: '' });
       setShowAddPitcher(false);
     };
@@ -845,7 +847,7 @@ export default function PitchTracker() {
             <>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold">Pitchers ({teamPitchers.length}/15)</h2>
-            <div className="flex gap-2">
+                <div className="flex gap-2">
               {teamPitchers.length < 15 && (
                 <button
                   onClick={() => setShowAddPitcher(true)}
@@ -1137,7 +1139,7 @@ export default function PitchTracker() {
     if (!gameState.selectedPitcher) {
       const availablePitchers = allPitchers.filter(p => {
         if (!currentTeam.pitcherIds.includes(p.id)) return false;
-        return calculateAvailablePitches(p) > 0;
+        return calculateAvailablePitches(p, currentTeam.organization) > 0;
       });
 
       return (
@@ -1638,8 +1640,8 @@ export default function PitchTracker() {
     const teamLhbPercent = teamTotals.lhbPitches > 0 ? Math.round((teamTotals.lhbStrikes / teamTotals.lhbPitches) * 100) : 0;
 
     const teamPitchers = allPitchers.filter(p => currentTeam.pitcherIds.includes(p.id));
-    const unavailableToday = teamPitchers.filter(p => calculateAvailablePitches(p) <= 0);
-    const availableToday = teamPitchers.filter(p => calculateAvailablePitches(p) > 0);
+    const unavailableToday = teamPitchers.filter(p => calculateAvailablePitches(p, currentTeam.organization) <= 0);
+    const availableToday = teamPitchers.filter(p => calculateAvailablePitches(p, currentTeam.organization) > 0);
 
     // Generate game report text
     const generateGameReport = () => {
@@ -1833,7 +1835,7 @@ export default function PitchTracker() {
                 if (availableToday.length > 0) {
                   report += 'AVAILABLE NOW:\n';
                   availableToday.forEach(p => {
-                    const available = calculateAvailablePitches(p);
+                    const available = calculateAvailablePitches(p, currentTeam.organization);
                     report += `• ${p.fullName} - ${available} pitches available\n`;
                   });
                 }
