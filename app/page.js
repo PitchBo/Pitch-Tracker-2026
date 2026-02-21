@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, R
 import { Plus, ArrowLeft, Trash2, TrendingUp, X, Edit } from 'lucide-react';
 
 /* 
- * THE PITCH TRACKER - Web App with Phone Storage
+ * THE PITCH TRACKER - Web App with Phone Storage R10
  * 
  * FEATURES INCLUDED:
  * ✓ Team management (up to 5)
