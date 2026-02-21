@@ -1033,7 +1033,6 @@ export default function PitchTracker() {
               })
             )}
           </div>
-            </>
           )}
 
           {/* Available Pitchers Tab */}
