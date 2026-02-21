@@ -1035,6 +1035,7 @@ export default function PitchTracker() {
               })
             )}
           </div>
+            </>
           )}
 
           {/* Available Pitchers Tab */}
@@ -1043,7 +1044,7 @@ export default function PitchTracker() {
               <div className="bg-white rounded-lg p-6 shadow">
                 <h2 className="text-xl font-bold mb-4">Available Pitchers - Ranked</h2>
                 <p className="text-sm text-gray-600 mb-4">
-                  Ranked by: 1) Available pitches 2) Strike % 3) First pitch strike % 4) Lowest walk %
+                  Ranked by: #1 Available pitches, #2 Strike %, #3 First pitch strike %, #4 Lowest walk %
                 </p>
 
                 {(() => {
