@@ -1397,7 +1397,11 @@ export default function PitchTracker() {
 
   // Pitch Tracking
   const PitchTrackingView = () => {
-    if (!gameState.selectedPitcher) {
+    // Check if a game is currently in progress
+    const gameInProgress = gameState && gameState.selectedPitcher && gameState.pitches && gameState.pitches.length > 0;
+    
+    // Show pitcher selection ONLY if no gameState exists OR if no pitcher selected AND no game in progress
+    if (!gameState || (!gameState.selectedPitcher && !gameInProgress)) {
       const availablePitchers = allPitchers.filter(p => {
         if (!currentTeam.pitcherIds.includes(p.id)) return false;
         return calculateAvailablePitches(p, currentTeam.organization) > 0;
@@ -1435,7 +1439,8 @@ export default function PitchTracker() {
                         ballsInPlay: 0,
                         firstPitchStrikes: 0,
                         atBats: 0,
-                        threeBallCounts: 0
+                        threeBallCounts: 0,
+                        currentAtBatFirstPitchStrike: false
                       });
                     }}
                     className="bg-white rounded-lg p-4 shadow hover:shadow-lg cursor-pointer transition"
@@ -1464,6 +1469,33 @@ export default function PitchTracker() {
     }
 
     const pitcher = allPitchers.find(p => p.id === gameState.selectedPitcher);
+    
+    // Safety check: if pitcher not found but game in progress, preserve the game data
+    if (!pitcher && gameState.pitches && gameState.pitches.length > 0) {
+      return (
+        <div className="min-h-screen bg-gray-100 p-4 pb-20">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+              <h2 className="font-bold text-red-900 mb-2">⚠️ Pitcher Data Missing</h2>
+              <p className="text-red-700">
+                Game in progress but pitcher information not found. Your game data is preserved. 
+                Please return to dashboard and ensure the pitcher still exists in the team roster.
+              </p>
+              <p className="text-sm text-red-600 mt-2">
+                Pitches recorded: {gameState.pitches.length} | Outs: {gameState.outs || 0}
+              </p>
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className="mt-4 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+              >
+                Return to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
     const pitches = gameState.pitches || [];
     const totalPitches = pitches.length;
     const totalStrikes = pitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
@@ -1508,11 +1540,11 @@ export default function PitchTracker() {
       let newAtBats = gameState.atBats;
       let newThreeBallCounts = gameState.threeBallCounts;
       let newBatterHand = gameState.batterHand;
+      let newCurrentAtBatFirstPitchStrike = gameState.currentAtBatFirstPitchStrike || false;
       
-      // Track if this was a first pitch strike (before we know if at-bat completes)
-      let wasFirstPitchStrike = false;
+      // Track if this was a first pitch strike - store in gameState to persist across pitches
       if (isFirstPitch && ['strike', 'ballInPlay', 'out', 'foul'].includes(outcome)) {
-        wasFirstPitchStrike = true;
+        newCurrentAtBatFirstPitchStrike = true;
       }
       
       // Track if at-bat will complete (don't update stats mid at-bat)
@@ -1542,12 +1574,13 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
-        if (wasFirstPitchStrike) newFirstPitchStrikes++;
+        if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
         if (newBalls === 3) newThreeBallCounts++;
         
         newBalls = 0;
         newStrikes = 0;
         newBatterHand = null;
+        newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
       } else if (outcome === 'out') {
         newOuts++;
         newBattersFaced++;
@@ -1555,12 +1588,13 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
-        if (wasFirstPitchStrike) newFirstPitchStrikes++;
+        if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
         if (newBalls === 3) newThreeBallCounts++;
         
         newBalls = 0;
         newStrikes = 0;
         newBatterHand = null;
+        newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
         
         if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
           setGameState({
@@ -1575,7 +1609,8 @@ export default function PitchTracker() {
             threeBallCounts: newThreeBallCounts,
             balls: newBalls,
             strikes: newStrikes,
-            batterHand: newBatterHand
+            batterHand: newBatterHand,
+            currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
           });
           return;
         }
@@ -1587,10 +1622,12 @@ export default function PitchTracker() {
         let reachedBase = false;
         if (currentOuts === 2) {
           // Two outs - ask if this is end of inning
-          reachedBase = !window.confirm('Strikeout with 2 outs. Is this the end of the inning? (Click OK if out, Cancel if batter reached on uncaught third strike)');
+          const message = 'Strikeout with 2 outs.\n\nClick "OK" if batter is OUT (end of inning)\nClick "Cancel" if batter REACHED base (uncaught third strike)';
+          reachedBase = !window.confirm(message);
         } else {
           // Less than 2 outs - ask if batter reached
-          reachedBase = window.confirm('Strikeout! Did the batter reach base on an uncaught third strike? (Click OK if reached base, Cancel if out)');
+          const message = 'Strikeout!\n\nClick "OK" if batter REACHED base (uncaught third strike)\nClick "Cancel" if batter is OUT';
+          reachedBase = window.confirm(message);
         }
         
         if (reachedBase) {
@@ -1601,12 +1638,13 @@ export default function PitchTracker() {
           atBatCompletes = true;
           
           // Update stats since at-bat is complete
-          if (wasFirstPitchStrike) newFirstPitchStrikes++;
+          if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
           if (newBalls === 3) newThreeBallCounts++;
           
           newBalls = 0;
           newStrikes = 0;
           newBatterHand = null;
+          newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
         } else {
           // Normal strikeout - batter is out
           newOuts++;
@@ -1615,12 +1653,13 @@ export default function PitchTracker() {
           atBatCompletes = true;
           
           // NOW update stats since at-bat is complete
-          if (wasFirstPitchStrike) newFirstPitchStrikes++;
+          if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
           if (newBalls === 3) newThreeBallCounts++;
           
           newBalls = 0;
           newStrikes = 0;
           newBatterHand = null;
+          newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
           
           // Check for end of inning (after confirming the out)
           if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
@@ -1636,7 +1675,8 @@ export default function PitchTracker() {
               threeBallCounts: newThreeBallCounts,
               balls: newBalls,
               strikes: newStrikes,
-              batterHand: newBatterHand
+              batterHand: newBatterHand,
+              currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
             });
             return;
           }
@@ -1647,12 +1687,13 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
-        if (wasFirstPitchStrike) newFirstPitchStrikes++;
+        if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
         if (newBalls === 3) newThreeBallCounts++;  // Was 3 before the 4th ball
         
         newBalls = 0;
         newStrikes = 0;
         newBatterHand = null;
+        newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
       }
 
       setGameState({
@@ -1666,7 +1707,8 @@ export default function PitchTracker() {
         firstPitchStrikes: newFirstPitchStrikes,
         atBats: newAtBats,
         threeBallCounts: newThreeBallCounts,
-        batterHand: newBatterHand
+        batterHand: newBatterHand,
+        currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
       });
     };
 
@@ -1838,6 +1880,7 @@ export default function PitchTracker() {
         firstPitchStrikes: 0,
         atBats: 0,
         threeBallCounts: 0,
+        currentAtBatFirstPitchStrike: false,
         pitchers: [...(gameState.pitchers || []), { pitcher: updatedPitcher, gameData }]
       });
     };
@@ -2783,10 +2826,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 1.7 - Updated February 21, 2026 at 2:47 PM EST
+              Version 2.0 - Updated February 21, 2026 at 3:10 PM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: Fixed first pitch strikes, added uncaught third strike handling, fixed undo function bugs
+              Latest: Critical fix - game state now persists when navigating between views
             </p>
           </div>
 
