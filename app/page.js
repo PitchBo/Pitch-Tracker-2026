@@ -401,6 +401,9 @@ export default function PitchTracker() {
       coach2Name: '',
       coach2Phone: ''
     });
+    const [dashboardTab, setDashboardTab] = useState('teams'); // 'teams' or 'pitchers'
+    const [editingPitcher, setEditingPitcher] = useState(null);
+    const [selectedPitchersForTeam, setSelectedPitchersForTeam] = useState([]);
 
     const startEditTeam = (team, e) => {
       e.stopPropagation();
@@ -424,7 +427,7 @@ export default function PitchTracker() {
         // Update existing team
         setTeams(teams.map(t => 
           t.id === editingTeam 
-            ? { ...t, ...newTeam }
+            ? { ...t, ...newTeam, pitcherIds: [...new Set([...t.pitcherIds, ...selectedPitchersForTeam])] }
             : t
         ));
         setEditingTeam(null);
@@ -437,7 +440,7 @@ export default function PitchTracker() {
         const team = {
           id: Date.now(),
           ...newTeam,
-          pitcherIds: []
+          pitcherIds: selectedPitchersForTeam
         };
         setTeams([...teams, team]);
       }
@@ -451,6 +454,7 @@ export default function PitchTracker() {
         coach2Name: '',
         coach2Phone: ''
       });
+      setSelectedPitchersForTeam([]);
       setShowAddTeam(false);
     };
 
@@ -461,6 +465,44 @@ export default function PitchTracker() {
       }
     };
 
+    const deletePitcherStats = (pitcherId) => {
+      if (window.confirm('Delete all stats for this pitcher? This will remove all game and training data but keep the pitcher.')) {
+        setAllPitchers(allPitchers.map(p => 
+          p.id === pitcherId 
+            ? { ...p, games: [], trainingSessions: [] }
+            : p
+        ));
+      }
+    };
+
+    const deletePitcherCompletely = (pitcherId) => {
+      if (window.confirm('Permanently delete this pitcher? This will remove the pitcher from all teams.')) {
+        // Remove from all teams
+        setTeams(teams.map(t => ({
+          ...t,
+          pitcherIds: t.pitcherIds.filter(id => id !== pitcherId)
+        })));
+        // Remove pitcher
+        setAllPitchers(allPitchers.filter(p => p.id !== pitcherId));
+      }
+    };
+
+    const startEditPitcherDashboard = (pitcher) => {
+      setEditingPitcher(pitcher);
+    };
+
+    const handleSavePitcher = (updatedPitcher) => {
+      setAllPitchers(allPitchers.map(p => 
+        p.id === updatedPitcher.id ? updatedPitcher : p
+      ));
+      setEditingPitcher(null);
+    };
+
+    // Get unassigned pitchers (pitchers not on any team)
+    const unassignedPitchers = allPitchers.filter(p => 
+      !teams.some(t => t.pitcherIds.includes(p.id))
+    );
+
     return (
       <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
@@ -469,17 +511,35 @@ export default function PitchTracker() {
             <p className="text-sm text-blue-800 mt-1">Session-only data: All information will be lost on page refresh</p>
           </div>
 
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold text-gray-800">My Teams ({teams.length}/5)</h1>
-            {teams.length < 5 && (
-              <button
-                onClick={() => setShowAddTeam(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
-              >
-                <Plus size={20} /> Add Team
-              </button>
-            )}
+          {/* Tab Navigation */}
+          <div className="flex gap-2 mb-6 bg-white rounded-lg p-1 shadow">
+            <button
+              onClick={() => setDashboardTab('teams')}
+              className={`flex-1 py-2 px-4 rounded ${dashboardTab === 'teams' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Teams ({teams.length})
+            </button>
+            <button
+              onClick={() => setDashboardTab('pitchers')}
+              className={`flex-1 py-2 px-4 rounded ${dashboardTab === 'pitchers' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              All Pitchers ({allPitchers.length})
+            </button>
           </div>
+
+          {dashboardTab === 'teams' && (
+            <>
+              <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold text-gray-800">My Teams ({teams.length}/5)</h1>
+                {teams.length < 5 && (
+                  <button
+                    onClick={() => setShowAddTeam(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
+                  >
+                    <Plus size={20} /> Add Team
+                  </button>
+                )}
+              </div>
 
           {showAddTeam && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -578,6 +638,38 @@ export default function PitchTracker() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Assign Existing Pitchers */}
+                    {unassignedPitchers.length > 0 && (
+                      <div className="border-t pt-4">
+                        <h3 className="font-semibold mb-3">Assign Existing Pitchers (Optional)</h3>
+                        <p className="text-sm text-gray-600 mb-3">These pitchers are not assigned to any team. Select to add them to this team:</p>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {unassignedPitchers.map(pitcher => (
+                            <label key={pitcher.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedPitchersForTeam.includes(pitcher.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedPitchersForTeam([...selectedPitchersForTeam, pitcher.id]);
+                                  } else {
+                                    setSelectedPitchersForTeam(selectedPitchersForTeam.filter(id => id !== pitcher.id));
+                                  }
+                                }}
+                                className="rounded"
+                              />
+                              <span className="text-sm">
+                                {pitcher.fullName}, Age {pitcher.age}
+                                {pitcher.games && pitcher.games.length > 0 && (
+                                  <span className="text-gray-500 ml-2">({pitcher.games.length} games)</span>
+                                )}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-3 mt-6 pt-4 pb-16 sticky bottom-0 bg-white border-t">
                     <button
@@ -654,6 +746,172 @@ export default function PitchTracker() {
               })
             )}
           </div>
+          </>
+          )}
+
+          {/* Pitchers Tab */}
+          {dashboardTab === 'pitchers' && (
+            <>
+              <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold text-gray-800">All Pitchers ({allPitchers.length})</h1>
+              </div>
+
+              {allPitchers.length === 0 ? (
+                <div className="bg-white rounded-lg p-8 text-center">
+                  <p className="text-gray-600 mb-4">No pitchers in database. Add pitchers through a team first.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {allPitchers.map(pitcher => {
+                    const pitcherTeams = teams.filter(t => t.pitcherIds.includes(pitcher.id));
+                    const hasStats = (pitcher.games && pitcher.games.length > 0) || (pitcher.trainingSessions && pitcher.trainingSessions.length > 0);
+                    
+                    return (
+                      <div key={pitcher.id} className="bg-white rounded-lg p-6 shadow">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="text-xl font-bold">{pitcher.fullName}, Age {pitcher.age}</h3>
+                            <p className="text-sm text-gray-600">Birthday: {new Date(pitcher.birthday).toLocaleDateString()}</p>
+                            {pitcherTeams.length > 0 ? (
+                              <p className="text-sm text-blue-600 mt-1">
+                                Teams: {pitcherTeams.map(t => t.name).join(', ')}
+                              </p>
+                            ) : (
+                              <p className="text-sm text-orange-600 mt-1">⚠️ Not assigned to any team</p>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => startEditPitcherDashboard(pitcher)}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="Edit pitcher"
+                            >
+                              <Edit size={20} />
+                            </button>
+                            <button
+                              onClick={() => deletePitcherCompletely(pitcher.id)}
+                              className="text-red-600 hover:text-red-800"
+                              title="Delete pitcher"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <p className="text-sm text-gray-600">Pitch Arsenal:</p>
+                            <p className="font-semibold">{pitcher.pitchArsenal?.join(', ') || 'None'}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Available Today:</p>
+                            <p className="font-semibold text-green-600">
+                              {pitcherTeams[0] ? calculateAvailablePitches(pitcher, pitcherTeams[0].organization) : 'N/A'} pitches
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                          <div className="bg-gray-50 p-3 rounded">
+                            <p className="text-gray-600">Games Played</p>
+                            <p className="text-2xl font-bold text-blue-600">{pitcher.games?.length || 0}</p>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded">
+                            <p className="text-gray-600">Training Sessions</p>
+                            <p className="text-2xl font-bold text-purple-600">{pitcher.trainingSessions?.length || 0}</p>
+                          </div>
+                        </div>
+
+                        {hasStats && (
+                          <button
+                            onClick={() => deletePitcherStats(pitcher.id)}
+                            className="w-full bg-orange-100 text-orange-700 px-4 py-2 rounded hover:bg-orange-200 flex items-center justify-center gap-2"
+                          >
+                            <Trash2 size={16} />
+                            Delete All Stats (Keep Pitcher)
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Edit Pitcher Modal */}
+          {editingPitcher && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-bold">Edit Pitcher</h2>
+                  <button onClick={() => setEditingPitcher(null)} className="text-gray-500 hover:text-gray-700">
+                    <X size={24} />
+                  </button>
+                </div>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSavePitcher(editingPitcher);
+                }}>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block font-semibold mb-1">Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingPitcher.fullName}
+                        onChange={(e) => setEditingPitcher({ ...editingPitcher, fullName: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Birthday</label>
+                      <input
+                        type="date"
+                        required
+                        value={editingPitcher.birthday}
+                        onChange={(e) => setEditingPitcher({ ...editingPitcher, birthday: e.target.value, age: calculateAge(e.target.value) })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Coach Phone</label>
+                      <input
+                        type="tel"
+                        value={editingPitcher.coachPhone || ''}
+                        onChange={(e) => setEditingPitcher({ ...editingPitcher, coachPhone: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Player Phone</label>
+                      <input
+                        type="tel"
+                        value={editingPitcher.playerPhone || ''}
+                        onChange={(e) => setEditingPitcher({ ...editingPitcher, playerPhone: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={() => setEditingPitcher(null)}
+                      className="flex-1 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -2490,7 +2748,17 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
     return (
       <div className="min-h-screen bg-gray-100 p-4 pb-20 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl font-bold mb-6">⚙️ Settings</h1>
+          <h1 className="text-3xl font-bold mb-2">⚙️ Settings</h1>
+          
+          {/* Version Information */}
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
+            <p className="text-sm font-semibold text-blue-900">
+              Version 1.6 - Updated February 21, 2026 at 6:45 PM EST
+            </p>
+            <p className="text-xs text-blue-700 mt-1">
+              Latest: Added Pitcher Management Tab, Assign Existing Pitchers to Teams, Delete Stats feature
+            </p>
+          </div>
 
           <div className="bg-white rounded-lg p-6 shadow mb-4">
             <h2 className="text-xl font-bold mb-4">Strike Percentage Colors</h2>
