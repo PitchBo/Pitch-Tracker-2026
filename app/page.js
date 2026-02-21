@@ -2783,10 +2783,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 1.6 - Updated February 21, 2026 at 2:07 PM EST
+              Version 1.7 - Updated February 21, 2026 at 2:47 PM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: Added Pitcher Management Tab, Assign Existing Pitchers to Teams, Delete Stats feature
+              Latest: Fixed first pitch strikes, added uncaught third strike handling, fixed undo function bugs
             </p>
           </div>
 
