@@ -251,7 +251,9 @@ export default function PitchTracker() {
           }
           
           // Count pitches in rolling 4-day window for availability calculation
-          if (daysSinceGame >= 0 && daysSinceGame <= 4) {
+          // daysSinceGame = 1 means yesterday, 2 means 2 days ago, etc.
+          // We want to count pitches from the last 4 days (days 1, 2, 3, 4)
+          if (daysSinceGame >= 1 && daysSinceGame <= 4) {
             pitchesUsedInWindow += pitchCount;
           }
         });
@@ -1269,9 +1271,6 @@ export default function PitchTracker() {
           newStrikes++;
         }
         // Foul ball never completes an at-bat
-      } else if (['strike', 'ballInPlay', 'out'].includes(outcome)) {
-        newBalls++;
-        // Don't increment threeBallCounts yet - wait for at-bat to complete
       } else if (['strike', 'ballInPlay', 'out'].includes(outcome)) {
         newStrikes++;
         // Don't increment firstPitchStrikes yet - wait for at-bat to complete
@@ -2762,18 +2761,18 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
   // Bottom Nav
   const BottomNav = () => (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
-      <div className="max-w-4xl mx-auto flex justify-around py-1">
-        <button onClick={() => setCurrentView('dashboard')} className={`flex flex-col items-center gap-0 px-3 py-1 ${['dashboard', 'team', 'pitchTracking', 'gameEnd'].includes(currentView) ? 'text-blue-600' : 'text-gray-600'}`}>
-          <div className="text-xl">📊</div>
-          <span className="text-[10px]">Teams</span>
+      <div className="max-w-4xl mx-auto flex justify-around py-0.5">
+        <button onClick={() => setCurrentView('dashboard')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${['dashboard', 'team', 'pitchTracking', 'gameEnd'].includes(currentView) ? 'text-blue-600' : 'text-gray-600'}`}>
+          <div className="text-sm">📊</div>
+          <span className="text-[9px]">Teams</span>
         </button>
-        <button onClick={() => setCurrentView('training')} className={`flex flex-col items-center gap-0 px-3 py-1 ${currentView === 'training' ? 'text-blue-600' : 'text-gray-600'}`}>
-          <TrendingUp size={20} />
-          <span className="text-[10px]">Training</span>
+        <button onClick={() => setCurrentView('training')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${currentView === 'training' ? 'text-blue-600' : 'text-gray-600'}`}>
+          <TrendingUp size={14} />
+          <span className="text-[9px]">Training</span>
         </button>
-        <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-0 px-3 py-1 ${currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'}`}>
-          <div className="text-xl">⚙️</div>
-          <span className="text-[10px]">Settings</span>
+        <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'}`}>
+          <div className="text-sm">⚙️</div>
+          <span className="text-[9px]">Settings</span>
         </button>
       </div>
     </div>
