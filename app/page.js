@@ -36,6 +36,8 @@ export default function PitchTracker() {
   const [allPitchers, setAllPitchers] = useState([]);
   const [currentTeam, setCurrentTeam] = useState(null);
   const [gameState, setGameState] = useState(null);
+  const [pausedGame, setPausedGame] = useState(null);
+  const [pausedTraining, setPausedTraining] = useState(null);
   const [storageReady, setStorageReady] = useState(false);
   const [settings, setSettings] = useState({
     redThreshold: 50,    // Below this = RED
@@ -314,6 +316,8 @@ export default function PitchTracker() {
         const loadedTeams = await storage.getAllTeams();
         const loadedPitchers = await storage.getAllPitchers();
         const loadedSettings = await storage.get('settings', 'app_settings');
+        const loadedPausedGame = await storage.get('pausedGame', 'paused_sessions');
+        const loadedPausedTraining = await storage.get('pausedTraining', 'paused_sessions');
         
         if (loadedTeams && loadedTeams.length > 0) {
           setTeams(loadedTeams);
@@ -323,6 +327,12 @@ export default function PitchTracker() {
         }
         if (loadedSettings) {
           setSettings(loadedSettings);
+        }
+        if (loadedPausedGame) {
+          setPausedGame(loadedPausedGame);
+        }
+        if (loadedPausedTraining) {
+          setPausedTraining(loadedPausedTraining);
         }
         
         setStorageReady(true);
@@ -386,6 +396,48 @@ export default function PitchTracker() {
     };
     saveSettings();
   }, [settings, storageReady]);
+
+  // Auto-save paused game
+  useEffect(() => {
+    const savePausedGame = async () => {
+      if (storageReady) {
+        try {
+          const storageModule = await import('../lib/storage');
+          const storage = storageModule.default;
+          if (pausedGame) {
+            await storage.save('pausedGame', { key: 'paused_sessions', ...pausedGame });
+            console.log('💾 Saved paused game');
+          } else {
+            await storage.delete('pausedGame', 'paused_sessions');
+          }
+        } catch (error) {
+          console.error('Failed to save paused game:', error);
+        }
+      }
+    };
+    savePausedGame();
+  }, [pausedGame, storageReady]);
+
+  // Auto-save paused training
+  useEffect(() => {
+    const savePausedTraining = async () => {
+      if (storageReady) {
+        try {
+          const storageModule = await import('../lib/storage');
+          const storage = storageModule.default;
+          if (pausedTraining) {
+            await storage.save('pausedTraining', { key: 'paused_sessions', ...pausedTraining });
+            console.log('💾 Saved paused training');
+          } else {
+            await storage.delete('pausedTraining', 'paused_sessions');
+          }
+        } catch (error) {
+          console.error('Failed to save paused training:', error);
+        }
+      }
+    };
+    savePausedTraining();
+  }, [pausedTraining, storageReady]);
 
   // Dashboard
   const Dashboard = () => {
@@ -465,10 +517,15 @@ export default function PitchTracker() {
     };
 
     const deletePitcherStats = (pitcherId) => {
-      if (window.confirm('Delete all stats for this pitcher? This will remove all game and training data but keep the pitcher.')) {
+      if (window.confirm('Delete all stats for this pitcher? This will remove all game and training data but keep the pitcher information (name, birthday, phone, pitch arsenal).')) {
         setAllPitchers(allPitchers.map(p => 
           p.id === pitcherId 
-            ? { ...p, games: [], trainingSessions: [] }
+            ? { 
+                ...p, 
+                games: [], 
+                trainingSessions: [],
+                availableToday: calculateMaxPitches(p.age, teams.find(t => t.pitcherIds.includes(p.id))?.organization)
+              }
             : p
         ));
       }
@@ -1116,7 +1173,7 @@ export default function PitchTracker() {
                   <Plus size={20} /> Add Pitcher
                 </button>
               )}
-              {teamPitchers.length > 0 && (
+              {teamPitchers.length > 0 && !pausedGame && (
                 <button
                   onClick={() => {
                     setGameState({
@@ -1132,6 +1189,25 @@ export default function PitchTracker() {
                 >
                   Start Game
                 </button>
+              )}
+              {pausedGame && pausedGame.teamId === currentTeam.id && (
+                <button
+                  onClick={() => {
+                    setGameState(pausedGame);
+                    setPausedGame(null);
+                    setCurrentView('pitchTracking');
+                  }}
+                  className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 animate-pulse"
+                >
+                  ▶️ Resume Game in Progress
+                </button>
+              )}
+              {pausedGame && pausedGame.teamId !== currentTeam.id && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3">
+                  <p className="text-sm text-yellow-800">
+                    ⚠️ Game in progress with another team. End that game before starting a new one.
+                  </p>
+                </div>
               )}
             </div>
           </div>
@@ -1397,6 +1473,9 @@ export default function PitchTracker() {
 
   // Pitch Tracking
   const PitchTrackingView = () => {
+    const [pendingStrikeConfirm, setPendingStrikeConfirm] = React.useState(false);
+    const [pendingOutConfirm, setPendingOutConfirm] = React.useState(false);
+    
     // Check if a game is currently in progress
     const gameInProgress = gameState && gameState.selectedPitcher && gameState.pitches && gameState.pitches.length > 0;
     
@@ -1521,14 +1600,52 @@ export default function PitchTracker() {
       return data.slice(-20);
     };
 
-    const recordPitch = (outcome) => {
+    const recordPitch = (outcome, metadata = {}) => {
       if (!gameState.batterHand) {
         alert('Please select batter handedness first');
         return;
       }
 
+      // Special handling for non-pitch outs (pickoffs, caught stealing)
+      if (outcome === 'out' && metadata.outType === 'nonpitch') {
+        const newOuts = gameState.outs + 1;
+        const newBattersFaced = gameState.battersFaced + 1;
+        const newAtBats = gameState.atBats + 1;
+        
+        // Check for end of inning
+        if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
+          setGameState({
+            ...gameState,
+            inning: gameState.inning + 1,
+            outs: newOuts,
+            battersFaced: newBattersFaced,
+            atBats: newAtBats,
+            // Reset count for new inning
+            balls: 0,
+            strikes: 0,
+            batterHand: null
+          });
+          return;
+        }
+        
+        // Not end of inning - just record the out, keep current batter count
+        setGameState({
+          ...gameState,
+          outs: newOuts,
+          battersFaced: newBattersFaced,
+          atBats: newAtBats
+          // Keep balls, strikes, batterHand for current batter
+        });
+        return;
+      }
+
       const isFirstPitch = gameState.balls === 0 && gameState.strikes === 0;
-      const newPitch = { outcome, batterHand: gameState.batterHand, timestamp: Date.now() };
+      const newPitch = { 
+        outcome, 
+        batterHand: gameState.batterHand, 
+        timestamp: Date.now(),
+        ...metadata  // strikeType: 'called'/'swinging', outType: 'pitch'
+      };
       const updatedPitches = [...pitches, newPitch];
 
       let newBalls = gameState.balls;
@@ -1842,6 +1959,16 @@ export default function PitchTracker() {
     const endOuting = () => {
       const innings = (Math.floor(gameState.outs / 3) + (gameState.outs % 3) / 10).toFixed(1);
       
+      // Calculate swinging vs called strikes
+      const swingingStrikes = pitches.filter(p => 
+        (p.outcome === 'strike' && p.strikeType === 'swinging') || 
+        (p.outcome === 'foul')  // Fouls always count as swinging
+      ).length;
+      
+      const calledStrikes = pitches.filter(p => 
+        p.outcome === 'strike' && p.strikeType === 'called'
+      ).length;
+      
       const gameData = {
         date: new Date().toISOString(),
         teamId: currentTeam.id,
@@ -1850,6 +1977,8 @@ export default function PitchTracker() {
         strikePercent,
         battersFaced: gameState.battersFaced,
         strikes: totalStrikes,
+        swingingStrikes,
+        calledStrikes,
         lhbPitches: lhbPitches.length,
         lhbStrikes,
         rhbPitches: rhbPitches.length,
@@ -1929,15 +2058,85 @@ export default function PitchTracker() {
 
           <div className="grid grid-cols-2 gap-2 mb-3">
             <button onClick={() => recordPitch('ball')} className="bg-red-500 text-white py-3 rounded-lg font-bold text-base hover:bg-red-600">BALL</button>
-            <button onClick={() => recordPitch('strike')} className="bg-green-500 text-white py-3 rounded-lg font-bold text-base hover:bg-green-600">STRIKE</button>
+            <button onClick={() => setPendingStrikeConfirm(true)} className="bg-green-500 text-white py-3 rounded-lg font-bold text-base hover:bg-green-600">STRIKE</button>
             <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BALL IN PLAY</button>
-            <button onClick={() => recordPitch('out')} className="bg-purple-500 text-white py-3 rounded-lg font-bold text-base hover:bg-purple-600">OUT</button>
+            <button onClick={() => setPendingOutConfirm(true)} className="bg-purple-500 text-white py-3 rounded-lg font-bold text-base hover:bg-purple-600">OUT</button>
           </div>
 
           <div className="grid grid-cols-2 gap-2 mb-3">
             <button onClick={undoLastPitch} className="bg-yellow-500 text-white py-2 rounded-lg font-semibold text-sm hover:bg-yellow-600">↶ UNDO</button>
-            <button onClick={() => recordPitch('foul')} className="bg-orange-400 text-white py-2 rounded-lg font-semibold text-sm hover:bg-orange-500">FOUL BALL</button>
+            <button onClick={() => recordPitch('foul', { strikeType: 'swinging' })} className="bg-orange-400 text-white py-2 rounded-lg font-semibold text-sm hover:bg-orange-500">FOUL BALL</button>
           </div>
+          
+          {/* Strike Type Confirmation Dialog */}
+          {pendingStrikeConfirm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+                <h3 className="text-xl font-bold mb-4 text-center">Strike Type?</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      recordPitch('strike', { strikeType: 'called' });
+                      setPendingStrikeConfirm(false);
+                    }}
+                    className="bg-blue-600 text-white py-4 px-4 rounded-lg font-bold hover:bg-blue-700"
+                  >
+                    Called Strike
+                  </button>
+                  <button
+                    onClick={() => {
+                      recordPitch('strike', { strikeType: 'swinging' });
+                      setPendingStrikeConfirm(false);
+                    }}
+                    className="bg-green-600 text-white py-4 px-4 rounded-lg font-bold hover:bg-green-700"
+                  >
+                    Swinging Strike
+                  </button>
+                </div>
+                <button
+                  onClick={() => setPendingStrikeConfirm(false)}
+                  className="w-full mt-3 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Out Type Confirmation Dialog */}
+          {pendingOutConfirm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+                <h3 className="text-xl font-bold mb-4 text-center">How was the out recorded?</h3>
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => {
+                      recordPitch('out', { outType: 'pitch' });
+                      setPendingOutConfirm(false);
+                    }}
+                    className="bg-purple-600 text-white py-4 px-4 rounded-lg font-bold hover:bg-purple-700"
+                  >
+                    After a Pitch
+                  </button>
+                  <button
+                    onClick={() => {
+                      recordPitch('out', { outType: 'nonpitch' });
+                      setPendingOutConfirm(false);
+                    }}
+                    className="bg-orange-600 text-white py-4 px-4 rounded-lg font-bold hover:bg-orange-700"
+                  >
+                    Non-Pitch Out (pickoff, caught stealing)
+                  </button>
+                </div>
+                <button
+                  onClick={() => setPendingOutConfirm(false)}
+                  className="w-full mt-3 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2 mb-4">
             <button onClick={endInning} className="bg-gray-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-gray-700">END INNING</button>
@@ -1973,6 +2172,33 @@ export default function PitchTracker() {
               </ResponsiveContainer>
             </div>
           )}
+        </div>
+        
+        {/* Game Control Buttons - Replace bottom nav during game */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-gray-300 shadow-lg z-50">
+          <div className="max-w-4xl mx-auto flex gap-3 p-3">
+            <button
+              onClick={() => {
+                if (window.confirm('Pause this game? You can resume it later from the dashboard.')) {
+                  setPausedGame({
+                    ...gameState,
+                    pausedAt: new Date().toISOString()
+                  });
+                  setGameState(null);
+                  setCurrentView('dashboard');
+                }
+              }}
+              className="flex-1 bg-yellow-500 text-white px-4 py-3 rounded-lg hover:bg-yellow-600 font-semibold"
+            >
+              ⏸️ Pause Game
+            </button>
+            <button
+              onClick={() => setCurrentView('gameEnd')}
+              className="flex-1 bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 font-semibold"
+            >
+              🛑 End Game
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -2104,11 +2330,18 @@ export default function PitchTracker() {
 
           <div className="bg-white rounded-lg p-6 shadow mb-4">
             <h2 className="text-xl font-bold mb-4">Individual Pitcher Lines</h2>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {gamePitchers.map((p, i) => (
-                <p key={i} className="text-sm">
-                  {p.pitcher.fullName}: {p.gameData.totalPitches} pitches | {p.gameData.innings} IP | <StrikeBadge percentage={p.gameData.strikePercent} />
-                </p>
+                <div key={i} className="border-b pb-2 last:border-b-0">
+                  <p className="text-sm font-semibold">
+                    {p.pitcher.fullName}: {p.gameData.totalPitches} pitches | {p.gameData.innings} IP | <StrikeBadge percentage={p.gameData.strikePercent} />
+                  </p>
+                  {(p.gameData.swingingStrikes || p.gameData.calledStrikes) && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      Strike Details: {p.gameData.swingingStrikes || 0} Swinging | {p.gameData.calledStrikes || 0} Called
+                    </p>
+                  )}
+                </div>
               ))}
             </div>
           </div>
@@ -2610,7 +2843,36 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
               </div>
             </div>
 
-            <button onClick={() => endTrainingSession()} className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700">END SESSION</button>
+            {/* Training Control Buttons */}
+            <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-gray-300 shadow-lg z-50">
+              <div className="max-w-4xl mx-auto flex gap-3 p-3">
+                <button
+                  onClick={() => {
+                    if (window.confirm('Pause this training session? You can resume it later.')) {
+                      setPausedTraining({
+                        selectedPitcher,
+                        selectedTeam,
+                        targetPitches,
+                        sessionPitches,
+                        pausedAt: new Date().toISOString()
+                      });
+                      setSelectedPitcher(null);
+                      setSessionActive(false);
+                      setSessionPitches([]);
+                    }
+                  }}
+                  className="flex-1 bg-yellow-500 text-white px-4 py-3 rounded-lg hover:bg-yellow-600 font-semibold"
+                >
+                  ⏸️ Pause Training
+                </button>
+                <button
+                  onClick={() => endTrainingSession()}
+                  className="flex-1 bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 font-semibold"
+                >
+                  🛑 End Training
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       );
@@ -2746,7 +3008,31 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
                   <button onClick={() => setTargetPitches(50)} className="flex-1 bg-gray-200 px-3 py-2 rounded hover:bg-gray-300">50</button>
                 </div>
 
-                <button onClick={() => setSessionActive(true)} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700">START SESSION</button>
+                {!pausedTraining && (
+                  <button onClick={() => setSessionActive(true)} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700">START SESSION</button>
+                )}
+                {pausedTraining && pausedTraining.selectedPitcher.id === selectedPitcher.id && (
+                  <button
+                    onClick={() => {
+                      setSelectedPitcher(pausedTraining.selectedPitcher);
+                      setSelectedTeam(pausedTraining.selectedTeam);
+                      setTargetPitches(pausedTraining.targetPitches);
+                      setSessionPitches(pausedTraining.sessionPitches);
+                      setSessionActive(true);
+                      setPausedTraining(null);
+                    }}
+                    className="w-full bg-orange-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-orange-700 animate-pulse"
+                  >
+                    ▶️ Resume Training Session
+                  </button>
+                )}
+                {pausedTraining && pausedTraining.selectedPitcher.id !== selectedPitcher.id && (
+                  <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 mb-3">
+                    <p className="text-sm text-yellow-800">
+                      ⚠️ Training session in progress with {pausedTraining.selectedPitcher.fullName}. End that session before starting a new one.
+                    </p>
+                  </div>
+                )}
                 <button onClick={() => setShowHistory(true)} className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700">VIEW HISTORY</button>
               </div>
             </div>
@@ -2826,10 +3112,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 2.0 - Updated February 21, 2026 at 3:10 PM EST
+              Version 2.4 - Updated February 22, 2026 at 11:47 PM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: Critical fix - game state now persists when navigating between views
+              Latest: Improved delete stats function - now resets available pitches and clearer confirmation message
             </p>
           </div>
 
@@ -3126,25 +3412,32 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
     );
   };
 
-  // Bottom Nav
-  const BottomNav = () => (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
-      <div className="max-w-4xl mx-auto flex justify-around py-0.5">
-        <button onClick={() => setCurrentView('dashboard')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${['dashboard', 'team', 'pitchTracking', 'gameEnd'].includes(currentView) ? 'text-blue-600' : 'text-gray-600'}`}>
-          <div className="text-sm">📊</div>
-          <span className="text-[9px]">Teams</span>
-        </button>
-        <button onClick={() => setCurrentView('training')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${currentView === 'training' ? 'text-blue-600' : 'text-gray-600'}`}>
-          <TrendingUp size={14} />
-          <span className="text-[9px]">Training</span>
-        </button>
-        <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'}`}>
-          <div className="text-sm">⚙️</div>
-          <span className="text-[9px]">Settings</span>
-        </button>
+  // Bottom Nav - Hide during active game or training
+  const BottomNav = () => {
+    // Don't show bottom nav if there's an active game or if we're in pitch tracking view with a selected pitcher
+    const hideNav = (currentView === 'pitchTracking' && gameState && gameState.selectedPitcher);
+    
+    if (hideNav) return null;
+    
+    return (
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
+        <div className="max-w-4xl mx-auto flex justify-around py-0.5">
+          <button onClick={() => setCurrentView('dashboard')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${['dashboard', 'team', 'pitchTracking', 'gameEnd'].includes(currentView) ? 'text-blue-600' : 'text-gray-600'}`}>
+            <div className="text-sm">📊</div>
+            <span className="text-[9px]">Teams</span>
+          </button>
+          <button onClick={() => setCurrentView('training')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${currentView === 'training' ? 'text-blue-600' : 'text-gray-600'}`}>
+            <TrendingUp size={14} />
+            <span className="text-[9px]">Training</span>
+          </button>
+          <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-0 px-2 py-0.5 ${currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'}`}>
+            <div className="text-sm">⚙️</div>
+            <span className="text-[9px]">Settings</span>
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
