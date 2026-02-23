@@ -305,6 +305,45 @@ export default function PitchTracker() {
     return totalTraining;
   };
 
+  // Calculate pitches until mandatory rest
+  const calculatePitchesUntilRest = (currentPitchCount, age, organization) => {
+    const restThresholds = {
+      'MLB/Pitch Smart': {
+        '7-8': [20, 35, 50, 65],
+        '9-10': [20, 35, 50, 65, 75],
+        '11-12': [20, 35, 50, 65, 85],
+        '13-14': [20, 35, 50, 75, 95],
+        '15-16': [30, 45, 60, 75, 90, 105],
+        '17-18': [30, 45, 60, 80, 105]
+      },
+      'Little League': {
+        '7-8': [50],
+        '9-10': [75],
+        '11-12': [85],
+        '13-16': [95],
+        '17-18': [105]
+      }
+    };
+
+    const ageGroup = age <= 8 ? '7-8' :
+                     age <= 10 ? '9-10' :
+                     age <= 12 ? '11-12' :
+                     age <= 14 ? '13-14' :
+                     age <= 16 ? '15-16' : '17-18';
+    
+    const thresholds = restThresholds[organization]?.[ageGroup] || restThresholds['MLB/Pitch Smart'][ageGroup];
+    
+    // Find next threshold
+    for (let threshold of thresholds) {
+      if (currentPitchCount < threshold) {
+        return threshold - currentPitchCount;
+      }
+    }
+    
+    // Already past all thresholds - return 0 with warning
+    return 0;
+  };
+
   // Initialize storage and load data on app start
   useEffect(() => {
     const initStorage = async () => {
@@ -1969,6 +2008,9 @@ export default function PitchTracker() {
         p.outcome === 'strike' && p.strikeType === 'called'
       ).length;
       
+      const pitchesUntilRest = calculatePitchesUntilRest(totalPitches, pitcher.age, currentTeam.organization);
+      const mandatoryRestDays = getRequiredRestDays(totalPitches, pitcher.age, currentTeam.organization);
+      
       const gameData = {
         date: new Date().toISOString(),
         teamId: currentTeam.id,
@@ -1985,7 +2027,9 @@ export default function PitchTracker() {
         rhbStrikes,
         ballsInPlay: gameState.ballsInPlay,
         firstPitchStrikes: gameState.firstPitchStrikes,
-        threeBallCounts: gameState.threeBallCounts
+        threeBallCounts: gameState.threeBallCounts,
+        pitchesUntilRest,
+        mandatoryRestDays
       };
 
       const updatedPitcher = {
@@ -2149,6 +2193,17 @@ export default function PitchTracker() {
               <p>Count: {gameState.balls}-{gameState.strikes} | Pitches: {totalPitches} | Strikes: <StrikeBadge percentage={strikePercent} /> | BIP: {gameState.ballsInPlay}</p>
               <p>1st Pitch Strikes: {gameState.firstPitchStrikes}/{gameState.atBats} ({gameState.atBats > 0 ? Math.round((gameState.firstPitchStrikes/gameState.atBats)*100) : 0}%) | 3-Ball Counts: {gameState.threeBallCounts}</p>
               <p>vs RHB: <StrikeBadge percentage={rhbStrikePercent} /> | vs LHB: <StrikeBadge percentage={lhbStrikePercent} /></p>
+              {(() => {
+                const pitchesUntilRest = calculatePitchesUntilRest(totalPitches, pitcher.age, currentTeam.organization);
+                const restColor = pitchesUntilRest === 0 ? 'text-red-600 font-bold' :
+                                 pitchesUntilRest <= 5 ? 'text-orange-600 font-semibold' :
+                                 'text-green-600';
+                return (
+                  <p className={restColor}>
+                    Pitches Until Mandatory Rest: {pitchesUntilRest === 0 ? 'AT THRESHOLD!' : pitchesUntilRest}
+                  </p>
+                );
+              })()}
             </div>
           </div>
 
@@ -2339,6 +2394,17 @@ export default function PitchTracker() {
                   {(p.gameData.swingingStrikes || p.gameData.calledStrikes) && (
                     <p className="text-xs text-gray-600 mt-1">
                       Strike Details: {p.gameData.swingingStrikes || 0} Swinging | {p.gameData.calledStrikes || 0} Called
+                    </p>
+                  )}
+                  {p.gameData.mandatoryRestDays !== undefined && (
+                    <p className={`text-xs mt-1 font-semibold ${p.gameData.mandatoryRestDays === 0 ? 'text-green-600' : p.gameData.mandatoryRestDays >= 4 ? 'text-red-600' : 'text-orange-600'}`}>
+                      Mandatory Rest: {p.gameData.mandatoryRestDays} {p.gameData.mandatoryRestDays === 1 ? 'day' : 'days'} 
+                      {p.gameData.pitchesUntilRest === 0 && ' (AT THRESHOLD)'}
+                    </p>
+                  )}
+                  {p.gameData.pitchesUntilRest !== undefined && p.gameData.pitchesUntilRest > 0 && (
+                    <p className={`text-xs mt-1 ${p.gameData.pitchesUntilRest <= 5 ? 'text-orange-600 font-semibold' : 'text-green-600'}`}>
+                      Pitches Until Next Rest Threshold: {p.gameData.pitchesUntilRest}
                     </p>
                   )}
                 </div>
@@ -3112,10 +3178,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 2.4 - Updated February 22, 2026 at 11:47 PM EST
+              Version 2.6 - Updated February 23, 2026 at 12:12 AM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: Improved delete stats function - now resets available pitches and clearer confirmation message
+              Latest: Final report now shows mandatory rest days required for each pitcher
             </p>
           </div>
 
