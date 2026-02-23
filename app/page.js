@@ -215,7 +215,6 @@ export default function PitchTracker() {
     
     // Get daily limit based on age and organization
     const dailyLimit = getDailyPitchLimit(pitcher.age, organization);
-    let available = dailyLimit;
     
     // Get current date
     const today = new Date();
@@ -227,50 +226,184 @@ export default function PitchTracker() {
       p.birthday === pitcher.birthday
     );
     
-    // Check games and calculate rest requirements
-    let pitchesUsedInWindow = 0;
-    let needsRestUntil = null;
+    // Collect all games with dates
+    const allGames = [];
+    samePitchers.forEach(p => {
+      if (p.games && p.games.length > 0) {
+        p.games.forEach(game => {
+          const gameDate = new Date(game.date);
+          gameDate.setHours(0, 0, 0, 0);
+          const daysSinceGame = Math.floor((today - gameDate) / (1000 * 60 * 60 * 24));
+          allGames.push({
+            date: gameDate,
+            daysSince: daysSinceGame,
+            pitches: game.totalPitches || 0
+          });
+        });
+      }
+    });
+    
+    // Sort by date (most recent first)
+    allGames.sort((a, b) => b.date - a.date);
+    
+    // Calculate pitches for today, yesterday, day before yesterday
+    let pitchesToday = 0;
+    let pitchesYesterday = 0;
+    let pitchesDayBefore = 0;
+    
+    allGames.forEach(game => {
+      if (game.daysSince === 0) pitchesToday += game.pitches;
+      else if (game.daysSince === 1) pitchesYesterday += game.pitches;
+      else if (game.daysSince === 2) pitchesDayBefore += game.pitches;
+    });
+    
+    // Check if pitched yesterday (day 1 consecutive)
+    const pitchedYesterday = pitchesYesterday > 0;
+    
+    // Check if pitched day before yesterday (would make today day 3)
+    const pitchedDayBefore = pitchesDayBefore > 0;
+    
+    // RULE: Cannot pitch 3 consecutive days
+    if (pitchedYesterday && pitchedDayBefore) {
+      return 0; // Pitched last 2 days, MUST rest today
+    }
+    
+    // Check if in mandatory rest period from previous pitch day(s)
+    if (pitchedYesterday) {
+      // If pitched yesterday, check if rest is still required
+      const totalPitches = pitchesYesterday + pitchesToday;
+      const restDaysRequired = getRequiredRestDays(totalPitches, pitcher.age, organization);
+      
+      if (restDaysRequired > 0) {
+        // Still in rest period - cannot pitch today
+        return 0;
+      }
+    } else if (pitchesToday === 0) {
+      // Didn't pitch yesterday or today, check if rest from earlier games
+      const recentGames = allGames.filter(g => g.daysSince > 0 && g.daysSince <= 5);
+      for (let game of recentGames) {
+        const restDaysRequired = getRequiredRestDays(game.pitches, pitcher.age, organization);
+        if (game.daysSince <= restDaysRequired) {
+          return 0; // Still in rest period
+        }
+      }
+    }
+    
+    // Calculate available pitches for today
+    if (pitchedYesterday) {
+      // Day 2 consecutive: available = dailyMax - (yesterday + today)
+      const totalTwoDays = pitchesYesterday + pitchesToday;
+      return Math.max(0, dailyLimit - totalTwoDays);
+    } else {
+      // Single day or non-consecutive: available = dailyMax - today
+      return Math.max(0, dailyLimit - pitchesToday);
+    }
+  };
+
+  // Calculate total pitches thrown TODAY and mandatory rest days
+  const getTodaysPitchesAndRest = (pitcher, teamOrganization = null) => {
+    const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcher.id));
+    const organization = teamOrganization || pitcherTeam?.organization || 'MLB/Pitch Smart';
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find all pitchers with same name and birthday
+    const samePitchers = allPitchers.filter(p => 
+      p.fullName === pitcher.fullName && 
+      p.birthday === pitcher.birthday
+    );
+    
+    let pitchesToday = 0;
+    let pitchesYesterday = 0;
     
     samePitchers.forEach(p => {
       if (p.games && p.games.length > 0) {
         p.games.forEach(game => {
           const gameDate = new Date(game.date);
           gameDate.setHours(0, 0, 0, 0);
-          
           const daysSinceGame = Math.floor((today - gameDate) / (1000 * 60 * 60 * 24));
-          const pitchCount = game.totalPitches || 0;
           
-          // Check if still in rest period
-          const restDaysRequired = getRequiredRestDays(pitchCount, pitcher.age, organization);
-          const restUntilDate = new Date(gameDate);
-          restUntilDate.setDate(restUntilDate.getDate() + restDaysRequired);
-          
-          if (today < restUntilDate) {
-            // Still in mandatory rest period
-            if (!needsRestUntil || restUntilDate > needsRestUntil) {
-              needsRestUntil = restUntilDate;
-            }
-          }
-          
-          // Count pitches in rolling 4-day window for availability calculation
-          // daysSinceGame = 1 means yesterday, 2 means 2 days ago, etc.
-          // We want to count pitches from the last 4 days (days 1, 2, 3, 4)
-          if (daysSinceGame >= 1 && daysSinceGame <= 4) {
-            pitchesUsedInWindow += pitchCount;
+          if (daysSinceGame === 0) {
+            pitchesToday += (game.totalPitches || 0);
+          } else if (daysSinceGame === 1) {
+            pitchesYesterday += (game.totalPitches || 0);
           }
         });
       }
     });
     
-    // If in mandatory rest period, return 0
-    if (needsRestUntil) {
-      return 0;
+    // Calculate mandatory rest based on consecutive days
+    let mandatoryRestDays = 0;
+    
+    if (pitchesYesterday > 0) {
+      // Pitched yesterday (day 2 consecutive) - use combined total
+      const totalTwoDays = pitchesYesterday + pitchesToday;
+      mandatoryRestDays = getRequiredRestDays(totalTwoDays, pitcher.age, organization);
+      // Add 1 day minimum because must rest after 2 consecutive days
+      mandatoryRestDays = Math.max(mandatoryRestDays, 1);
+    } else {
+      // Single day - use today's total only
+      mandatoryRestDays = getRequiredRestDays(pitchesToday, pitcher.age, organization);
     }
     
-    // Subtract pitches used in last 4 days from daily limit
-    available = dailyLimit - pitchesUsedInWindow;
+    return { pitchesToday, pitchesYesterday, mandatoryRestDays };
+  };
+
+  // Calculate pitches remaining until next rest threshold or max
+  const getPitchesUntilNextThreshold = (currentPitches, yesterdayPitches, age, organization) => {
+    const dailyMax = getDailyPitchLimit(age, organization);
+    const pitchedYesterday = yesterdayPitches > 0;
     
-    return Math.max(0, available);
+    if (pitchedYesterday) {
+      // Day 2 consecutive - limit is daily max for combined total
+      const totalTwoDays = yesterdayPitches + currentPitches;
+      const remaining = dailyMax - totalTwoDays;
+      
+      if (remaining <= 0) {
+        return { remaining: 0, atMax: true, isConsecutiveDay: true };
+      }
+      
+      return { remaining, atMax: false, isConsecutiveDay: true };
+    } else {
+      // Single day - find next threshold
+      const thresholds = {
+        'MLB/Pitch Smart': {
+          '7-8': [20, 35, 50, 65],
+          '9-10': [20, 35, 50, 65, 75],
+          '11-12': [20, 35, 50, 65, 85],
+          '13-14': [20, 35, 50, 75, 95],
+          '15-16': [30, 45, 60, 75, 90, 105],
+          '17-18': [30, 45, 60, 80, 105]
+        },
+        'Little League': {
+          '7-8': [50],
+          '9-10': [75],
+          '11-12': [85],
+          '13-16': [95],
+          '17-18': [105]
+        }
+      };
+
+      const ageGroup = age <= 8 ? '7-8' :
+                       age <= 10 ? '9-10' :
+                       age <= 12 ? '11-12' :
+                       age <= 14 ? '13-14' :
+                       age <= 16 ? '15-16' : '17-18';
+      
+      const ageThresholds = thresholds[organization]?.[ageGroup] || thresholds['MLB/Pitch Smart'][ageGroup];
+      
+      // Find next threshold
+      for (let threshold of ageThresholds) {
+        if (currentPitches < threshold) {
+          return { remaining: threshold - currentPitches, atMax: false, isConsecutiveDay: false, nextThreshold: threshold };
+        }
+      }
+      
+      // At or past all thresholds - show remaining to daily max
+      const remaining = dailyMax - currentPitches;
+      return { remaining: Math.max(0, remaining), atMax: remaining <= 0, isConsecutiveDay: false };
+    }
   };
 
   // Calculate training pitches in last 3 days for display
@@ -1360,6 +1493,7 @@ export default function PitchTracker() {
                 const last5Days = pitcher.games ? pitcher.games.slice(-5).reduce((sum, g) => sum + g.totalPitches, 0) : 0;
                 const availablePitches = calculateAvailablePitches(pitcher, currentTeam.organization);
                 const trainingLast3Days = getTrainingPitchesLast3Days(pitcher);
+                const { pitchesToday, mandatoryRestDays } = getTodaysPitchesAndRest(pitcher, currentTeam.organization);
 
                 return (
                   <div key={pitcher.id} className="bg-white rounded-lg p-4 shadow hover:shadow-lg transition relative">
@@ -1383,6 +1517,12 @@ export default function PitchTracker() {
                         <div className="mt-2 space-y-1 text-sm">
                           <p className="font-semibold">
                             Available Today: <span className="text-green-600">{availablePitches} pitches</span>
+                          </p>
+                          <p>
+                            Pitches Today: <span className="text-blue-600">{pitchesToday}</span> | 
+                            Mandatory Rest: <span className={mandatoryRestDays === 0 ? 'text-green-600' : mandatoryRestDays >= 4 ? 'text-red-600' : 'text-orange-600'}>
+                              {mandatoryRestDays} {mandatoryRestDays === 1 ? 'day' : 'days'}
+                            </span>
                           </p>
                           <p>Last 5 Days (Games): {last5Days} pitches</p>
                           <p>Training Last 3 Days: <span className="text-blue-600">{trainingLast3Days} pitches</span></p>
@@ -1425,6 +1565,7 @@ export default function PitchTracker() {
                 {(() => {
                   const pitchersWithStats = teamPitchers.map(pitcher => {
                     const available = calculateAvailablePitches(pitcher, currentTeam.organization);
+                    const { pitchesToday, mandatoryRestDays } = getTodaysPitchesAndRest(pitcher, currentTeam.organization);
                     
                     let strikePercent = 0;
                     if (pitcher.games && pitcher.games.length > 0) {
@@ -1456,7 +1597,7 @@ export default function PitchTracker() {
                       walkPercent = totalBatters > 0 ? (walks / totalBatters) * 100 : 0;
                     }
                     
-                    return { pitcher, available, strikePercent, firstPitchStrikePercent, walkPercent, hasGameData: pitcher.games && pitcher.games.length > 0 };
+                    return { pitcher, available, pitchesToday, mandatoryRestDays, strikePercent, firstPitchStrikePercent, walkPercent, hasGameData: pitcher.games && pitcher.games.length > 0 };
                   });
 
                   const ranked = pitchersWithStats.sort((a, b) => {
@@ -1483,6 +1624,16 @@ export default function PitchTracker() {
                             <div className="bg-white p-2 rounded">
                               <p className="text-xs text-gray-600">Available Today</p>
                               <p className="text-lg font-bold text-green-600">{stats.available} pitches</p>
+                            </div>
+                            <div className="bg-white p-2 rounded">
+                              <p className="text-xs text-gray-600">Pitches Today</p>
+                              <p className="text-lg font-bold text-blue-600">{stats.pitchesToday}</p>
+                            </div>
+                            <div className="bg-white p-2 rounded">
+                              <p className="text-xs text-gray-600">Mandatory Rest</p>
+                              <p className={`text-lg font-bold ${stats.mandatoryRestDays === 0 ? 'text-green-600' : stats.mandatoryRestDays >= 4 ? 'text-red-600' : 'text-orange-600'}`}>
+                                {stats.mandatoryRestDays} {stats.mandatoryRestDays === 1 ? 'day' : 'days'}
+                              </p>
                             </div>
                             <div className="bg-white p-2 rounded">
                               <p className="text-xs text-gray-600">Strike %</p>
@@ -1545,6 +1696,9 @@ export default function PitchTracker() {
                   <div
                     key={pitcher.id}
                     onClick={() => {
+                      // Check if game is in progress (preserve inning and outs count)
+                      const gameInProgress = gameState && gameState.pitchers && gameState.pitchers.length > 0;
+                      
                       setGameState({
                         ...gameState,
                         selectedPitcher: pitcher.id,
@@ -1552,12 +1706,13 @@ export default function PitchTracker() {
                         batterHand: null,
                         balls: 0,
                         strikes: 0,
-                        outs: 0,
+                        outs: gameInProgress ? gameState.outs : 0, // Preserve outs if mid-game
                         battersFaced: 0,
                         ballsInPlay: 0,
                         firstPitchStrikes: 0,
                         atBats: 0,
                         threeBallCounts: 0,
+                        walks: 0,
                         currentAtBatFirstPitchStrike: false
                       });
                     }}
@@ -1640,13 +1795,16 @@ export default function PitchTracker() {
     };
 
     const recordPitch = (outcome, metadata = {}) => {
-      if (!gameState.batterHand) {
+      // Allow non-pitch outs without batter handedness (pickoff, caught stealing before next batter)
+      const isNonPitchOut = outcome === 'out' && metadata.outType === 'nonpitch';
+      
+      if (!gameState.batterHand && !isNonPitchOut) {
         alert('Please select batter handedness first');
         return;
       }
 
-      // Special handling for non-pitch outs (pickoffs, caught stealing)
-      if (outcome === 'out' && metadata.outType === 'nonpitch') {
+      // Special handling for non-pitch outs (pickoffs, caught stealing, thrown out on bases)
+      if (isNonPitchOut) {
         const newOuts = gameState.outs + 1;
         const newBattersFaced = gameState.battersFaced + 1;
         const newAtBats = gameState.atBats + 1;
@@ -1695,6 +1853,7 @@ export default function PitchTracker() {
       let newFirstPitchStrikes = gameState.firstPitchStrikes;
       let newAtBats = gameState.atBats;
       let newThreeBallCounts = gameState.threeBallCounts;
+      let newWalks = gameState.walks || 0;
       let newBatterHand = gameState.batterHand;
       let newCurrentAtBatFirstPitchStrike = gameState.currentAtBatFirstPitchStrike || false;
       
@@ -1840,6 +1999,7 @@ export default function PitchTracker() {
       } else if (newBalls >= 4) {
         newBattersFaced++;
         newAtBats++;
+        newWalks++; // Walk issued
         atBatCompletes = true;
         
         // NOW update stats since at-bat is complete
@@ -1863,6 +2023,7 @@ export default function PitchTracker() {
         firstPitchStrikes: newFirstPitchStrikes,
         atBats: newAtBats,
         threeBallCounts: newThreeBallCounts,
+        walks: newWalks,
         batterHand: newBatterHand,
         currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
       });
@@ -1996,7 +2157,18 @@ export default function PitchTracker() {
     };
 
     const endOuting = () => {
-      const innings = (Math.floor(gameState.outs / 3) + (gameState.outs % 3) / 10).toFixed(1);
+      // Calculate innings in baseball notation: full innings + partial
+      const fullInnings = Math.floor(gameState.outs / 3);
+      const partialOuts = gameState.outs % 3;
+      let innings;
+      
+      if (partialOuts === 0) {
+        innings = fullInnings.toString();
+      } else if (partialOuts === 1) {
+        innings = fullInnings + '+';
+      } else { // partialOuts === 2
+        innings = fullInnings + '++';
+      }
       
       // Calculate swinging vs called strikes
       const swingingStrikes = pitches.filter(p => 
@@ -2015,7 +2187,8 @@ export default function PitchTracker() {
         date: new Date().toISOString(),
         teamId: currentTeam.id,
         totalPitches: totalPitches,
-        innings: parseFloat(innings),
+        innings: innings, // String format: "2", "2+", "2++"
+        outs: gameState.outs, // For calculations
         strikePercent,
         battersFaced: gameState.battersFaced,
         strikes: totalStrikes,
@@ -2028,6 +2201,8 @@ export default function PitchTracker() {
         ballsInPlay: gameState.ballsInPlay,
         firstPitchStrikes: gameState.firstPitchStrikes,
         threeBallCounts: gameState.threeBallCounts,
+        walks: gameState.walks || 0,
+        walkPercent: gameState.battersFaced > 0 ? Math.round((gameState.walks / gameState.battersFaced) * 100) : 0,
         pitchesUntilRest,
         mandatoryRestDays
       };
@@ -2053,6 +2228,7 @@ export default function PitchTracker() {
         firstPitchStrikes: 0,
         atBats: 0,
         threeBallCounts: 0,
+        walks: 0,
         currentAtBatFirstPitchStrike: false,
         pitchers: [...(gameState.pitchers || []), { pitcher: updatedPitcher, gameData }]
       });
@@ -2103,7 +2279,7 @@ export default function PitchTracker() {
           <div className="grid grid-cols-2 gap-2 mb-3">
             <button onClick={() => recordPitch('ball')} className="bg-red-500 text-white py-3 rounded-lg font-bold text-base hover:bg-red-600">BALL</button>
             <button onClick={() => setPendingStrikeConfirm(true)} className="bg-green-500 text-white py-3 rounded-lg font-bold text-base hover:bg-green-600">STRIKE</button>
-            <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BALL IN PLAY</button>
+            <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BATTER REACHED SAFELY</button>
             <button onClick={() => setPendingOutConfirm(true)} className="bg-purple-500 text-white py-3 rounded-lg font-bold text-base hover:bg-purple-600">OUT</button>
           </div>
 
@@ -2160,7 +2336,7 @@ export default function PitchTracker() {
                     }}
                     className="bg-purple-600 text-white py-4 px-4 rounded-lg font-bold hover:bg-purple-700"
                   >
-                    After a Pitch
+                    Out on a Pitch
                   </button>
                   <button
                     onClick={() => {
@@ -2169,7 +2345,9 @@ export default function PitchTracker() {
                     }}
                     className="bg-orange-600 text-white py-4 px-4 rounded-lg font-bold hover:bg-orange-700"
                   >
-                    Non-Pitch Out (pickoff, caught stealing)
+                    Thrown Out / Picked Off
+                    <span className="block text-xs font-normal mt-1">(pickoff, caught stealing, out on bases)</span>
+                  </button>
                   </button>
                 </div>
                 <button
@@ -2192,15 +2370,35 @@ export default function PitchTracker() {
             <div className="space-y-2 text-sm">
               <p>Count: {gameState.balls}-{gameState.strikes} | Pitches: {totalPitches} | Strikes: <StrikeBadge percentage={strikePercent} /> | BIP: {gameState.ballsInPlay}</p>
               <p>1st Pitch Strikes: {gameState.firstPitchStrikes}/{gameState.atBats} ({gameState.atBats > 0 ? Math.round((gameState.firstPitchStrikes/gameState.atBats)*100) : 0}%) | 3-Ball Counts: {gameState.threeBallCounts}</p>
+              <p>Walks: {gameState.walks || 0} | Walk %: {gameState.battersFaced > 0 ? Math.round(((gameState.walks || 0) / gameState.battersFaced) * 100) : 0}%</p>
               <p>vs RHB: <StrikeBadge percentage={rhbStrikePercent} /> | vs LHB: <StrikeBadge percentage={lhbStrikePercent} /></p>
               {(() => {
-                const pitchesUntilRest = calculatePitchesUntilRest(totalPitches, pitcher.age, currentTeam.organization);
-                const restColor = pitchesUntilRest === 0 ? 'text-red-600 font-bold' :
-                                 pitchesUntilRest <= 5 ? 'text-orange-600 font-semibold' :
-                                 'text-green-600';
+                const { pitchesToday, pitchesYesterday } = getTodaysPitchesAndRest(pitcher, currentTeam.organization);
+                const { remaining, atMax, isConsecutiveDay, nextThreshold } = getPitchesUntilNextThreshold(
+                  totalPitches, 
+                  pitchesYesterday, 
+                  pitcher.age, 
+                  currentTeam.organization
+                );
+                
+                const displayColor = atMax ? 'text-red-600 font-bold' :
+                                    remaining <= 5 ? 'text-orange-600 font-semibold' :
+                                    'text-green-600';
+                
+                let displayText = '';
+                if (atMax) {
+                  displayText = 'MAXIMUM REACHED - Cannot pitch more';
+                } else if (isConsecutiveDay) {
+                  displayText = `${remaining} pitches remaining before MAX (Day 2 consecutive - MUST REST tomorrow)`;
+                } else if (nextThreshold) {
+                  displayText = `${remaining} pitches until next rest level (${nextThreshold} pitches)`;
+                } else {
+                  displayText = `${remaining} pitches remaining before MAX`;
+                }
+                
                 return (
-                  <p className={restColor}>
-                    Pitches Until Mandatory Rest: {pitchesUntilRest === 0 ? 'AT THRESHOLD!' : pitchesUntilRest}
+                  <p className={displayColor}>
+                    {displayText}
                   </p>
                 );
               })()}
@@ -2267,7 +2465,7 @@ export default function PitchTracker() {
       totalPitches: acc.totalPitches + p.gameData.totalPitches,
       strikes: acc.strikes + p.gameData.strikes,
       battersFaced: acc.battersFaced + p.gameData.battersFaced,
-      outs: acc.outs + Math.floor(p.gameData.innings) * 3 + Math.round((p.gameData.innings % 1) * 10),
+      outs: acc.outs + (p.gameData.outs || 0), // Use saved outs count
       rhbPitches: acc.rhbPitches + p.gameData.rhbPitches,
       rhbStrikes: acc.rhbStrikes + p.gameData.rhbStrikes,
       lhbPitches: acc.lhbPitches + p.gameData.lhbPitches,
@@ -2394,6 +2592,11 @@ export default function PitchTracker() {
                   {(p.gameData.swingingStrikes || p.gameData.calledStrikes) && (
                     <p className="text-xs text-gray-600 mt-1">
                       Strike Details: {p.gameData.swingingStrikes || 0} Swinging | {p.gameData.calledStrikes || 0} Called
+                    </p>
+                  )}
+                  {(p.gameData.walks !== undefined || p.gameData.walkPercent !== undefined) && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      Walks: {p.gameData.walks || 0} | Walk %: {p.gameData.walkPercent || 0}%
                     </p>
                   )}
                   {p.gameData.mandatoryRestDays !== undefined && (
@@ -3178,10 +3381,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 2.6 - Updated February 23, 2026 at 12:12 AM EST
+              Version 3.0 - Updated February 23, 2026 at 1:15 AM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: Final report now shows mandatory rest days required for each pitcher
+              Latest: MAJOR UPDATE - Correct consecutive day rest rules implemented: max 2 consecutive days, cumulative totals, accurate pitch remaining display
             </p>
           </div>
 
