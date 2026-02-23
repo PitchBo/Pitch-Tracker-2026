@@ -439,44 +439,6 @@ export default function PitchTracker() {
   };
 
   // Calculate pitches until mandatory rest
-  const calculatePitchesUntilRest = (currentPitchCount, age, organization) => {
-    const restThresholds = {
-      'MLB/Pitch Smart': {
-        '7-8': [20, 35, 50, 65],
-        '9-10': [20, 35, 50, 65, 75],
-        '11-12': [20, 35, 50, 65, 85],
-        '13-14': [20, 35, 50, 75, 95],
-        '15-16': [30, 45, 60, 75, 90, 105],
-        '17-18': [30, 45, 60, 80, 105]
-      },
-      'Little League': {
-        '7-8': [50],
-        '9-10': [75],
-        '11-12': [85],
-        '13-16': [95],
-        '17-18': [105]
-      }
-    };
-
-    const ageGroup = age <= 8 ? '7-8' :
-                     age <= 10 ? '9-10' :
-                     age <= 12 ? '11-12' :
-                     age <= 14 ? '13-14' :
-                     age <= 16 ? '15-16' : '17-18';
-    
-    const thresholds = restThresholds[organization]?.[ageGroup] || restThresholds['MLB/Pitch Smart'][ageGroup];
-    
-    // Find next threshold
-    for (let threshold of thresholds) {
-      if (currentPitchCount < threshold) {
-        return threshold - currentPitchCount;
-      }
-    }
-    
-    // Already past all thresholds - return 0 with warning
-    return 0;
-  };
-
   // Initialize storage and load data on app start
   useEffect(() => {
     const initStorage = async () => {
@@ -2180,8 +2142,25 @@ export default function PitchTracker() {
         p.outcome === 'strike' && p.strikeType === 'called'
       ).length;
       
-      const pitchesUntilRest = calculatePitchesUntilRest(totalPitches, pitcher.age, currentTeam.organization);
-      const mandatoryRestDays = getRequiredRestDays(totalPitches, pitcher.age, currentTeam.organization);
+      const { pitchesToday, pitchesYesterday } = getTodaysPitchesAndRest(pitcher, currentTeam.organization);
+      const { remaining: pitchesUntilRest } = getPitchesUntilNextThreshold(
+        totalPitches, 
+        pitchesYesterday, 
+        pitcher.age, 
+        currentTeam.organization
+      );
+      
+      // Calculate mandatory rest based on consecutive days
+      let mandatoryRestDays = 0;
+      if (pitchesYesterday > 0) {
+        // Day 2 consecutive - use combined total
+        const totalTwoDays = pitchesYesterday + totalPitches;
+        mandatoryRestDays = getRequiredRestDays(totalTwoDays, pitcher.age, currentTeam.organization);
+        mandatoryRestDays = Math.max(mandatoryRestDays, 1); // Minimum 1 day after 2 consecutive
+      } else {
+        // Single day
+        mandatoryRestDays = getRequiredRestDays(totalPitches, pitcher.age, currentTeam.organization);
+      }
       
       const gameData = {
         date: new Date().toISOString(),
@@ -2347,7 +2326,6 @@ export default function PitchTracker() {
                   >
                     Thrown Out / Picked Off
                     <span className="block text-xs font-normal mt-1">(pickoff, caught stealing, out on bases)</span>
-                  </button>
                   </button>
                 </div>
                 <button
@@ -3381,10 +3359,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.0 - Updated February 23, 2026 at 1:15 AM EST
+              Version 3.0.2 - Updated February 23, 2026 at 1:30 AM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: MAJOR UPDATE - Correct consecutive day rest rules implemented: max 2 consecutive days, cumulative totals, accurate pitch remaining display
+              Latest: Fixed JSX syntax error - removed duplicate closing button tag
             </p>
           </div>
 
