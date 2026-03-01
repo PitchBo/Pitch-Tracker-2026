@@ -443,7 +443,7 @@ export default function PitchTracker() {
   useEffect(() => {
     const initStorage = async () => {
       try {
-        const storageModule = await import('../lib/storage');
+        const storageModule = await import('./storage');
         const storage = storageModule.default;
         
         await storage.init();
@@ -485,7 +485,7 @@ export default function PitchTracker() {
     const saveTeams = async () => {
       if (storageReady) {
         try {
-          const storageModule = await import('../lib/storage');
+          const storageModule = await import('./storage');
           const storage = storageModule.default;
           await storage.saveAll('teams', teams);
           console.log('💾 Saved', teams.length, 'teams');
@@ -502,7 +502,7 @@ export default function PitchTracker() {
     const savePitchers = async () => {
       if (storageReady) {
         try {
-          const storageModule = await import('../lib/storage');
+          const storageModule = await import('./storage');
           const storage = storageModule.default;
           await storage.saveAll('pitchers', allPitchers);
           console.log('💾 Saved', allPitchers.length, 'pitchers');
@@ -519,7 +519,7 @@ export default function PitchTracker() {
     const saveSettings = async () => {
       if (storageReady) {
         try {
-          const storageModule = await import('../lib/storage');
+          const storageModule = await import('./storage');
           const storage = storageModule.default;
           await storage.save('settings', { key: 'app_settings', ...settings });
           console.log('💾 Saved settings');
@@ -536,7 +536,7 @@ export default function PitchTracker() {
     const savePausedGame = async () => {
       if (storageReady) {
         try {
-          const storageModule = await import('../lib/storage');
+          const storageModule = await import('./storage');
           const storage = storageModule.default;
           if (pausedGame) {
             await storage.save('pausedGame', { key: 'paused_sessions', ...pausedGame });
@@ -557,7 +557,7 @@ export default function PitchTracker() {
     const savePausedTraining = async () => {
       if (storageReady) {
         try {
-          const storageModule = await import('../lib/storage');
+          const storageModule = await import('./storage');
           const storage = storageModule.default;
           if (pausedTraining) {
             await storage.save('pausedTraining', { key: 'paused_sessions', ...pausedTraining });
