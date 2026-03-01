@@ -369,12 +369,12 @@ export default function PitchTracker() {
       // Single day - find next threshold
       const thresholds = {
         'MLB/Pitch Smart': {
-          '7-8': [20, 35, 50, 65],
-          '9-10': [20, 35, 50, 65, 75],
-          '11-12': [20, 35, 50, 65, 85],
-          '13-14': [20, 35, 50, 75, 95],
-          '15-16': [30, 45, 60, 75, 90, 105],
-          '17-18': [30, 45, 60, 80, 105]
+          '7-8': [20, 40, 60],
+          '9-10': [20, 40, 60, 75],
+          '11-12': [20, 40, 60, 85],
+          '13-14': [20, 40, 60, 95],
+          '15-16': [20, 40, 60, 105],
+          '17-18': [20, 40, 60, 105]
         },
         'Little League': {
           '7-8': [50],
@@ -1658,8 +1658,10 @@ export default function PitchTracker() {
                   <div
                     key={pitcher.id}
                     onClick={() => {
-                      // Check if game is in progress (preserve inning and outs count)
-                      const gameInProgress = gameState && gameState.pitchers && gameState.pitchers.length > 0;
+                      // Preserve outs if mid-inning (outs > 0 and not at 3, 6, 9, etc.)
+                      const midInning = gameState && gameState.outs > 0 && gameState.outs % 3 !== 0;
+                      const preserveOuts = midInning ? gameState.outs : 0;
+                      const preserveInning = midInning ? gameState.inning : 1;
                       
                       setGameState({
                         ...gameState,
@@ -1668,7 +1670,8 @@ export default function PitchTracker() {
                         batterHand: null,
                         balls: 0,
                         strikes: 0,
-                        outs: gameInProgress ? gameState.outs : 0, // Preserve outs if mid-game
+                        outs: preserveOuts, // Preserve outs if mid-inning
+                        inning: preserveInning, // Preserve inning too
                         battersFaced: 0,
                         ballsInPlay: 0,
                         firstPitchStrikes: 0,
@@ -1768,8 +1771,11 @@ export default function PitchTracker() {
       // Special handling for non-pitch outs (pickoffs, caught stealing, thrown out on bases)
       if (isNonPitchOut) {
         const newOuts = gameState.outs + 1;
-        const newBattersFaced = gameState.battersFaced + 1;
-        const newAtBats = gameState.atBats + 1;
+        // Only increment battersFaced and atBats if there was actually a batter
+        // (balls > 0 or strikes > 0 means batter was at plate)
+        const batterWasAtPlate = gameState.balls > 0 || gameState.strikes > 0;
+        const newBattersFaced = batterWasAtPlate ? gameState.battersFaced + 1 : gameState.battersFaced;
+        const newAtBats = batterWasAtPlate ? gameState.atBats + 1 : gameState.atBats;
         
         // Check for end of inning
         if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
@@ -3359,10 +3365,10 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.0.2 - Updated February 23, 2026 at 1:30 AM EST
+              Version 3.0.3 - Updated February 23, 2026 at 1:45 AM EST
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: Fixed JSX syntax error - removed duplicate closing button tag
+              Latest: Fixed FPS counting for non-pitch outs, corrected rest thresholds to 20/40/60, fixed outs preservation when changing pitcher mid-inning
             </p>
           </div>
 
