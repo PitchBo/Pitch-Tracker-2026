@@ -3365,7 +3365,16 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.0.3 - Updated February 23, 2026 at 1:45 AM EST
+              Version 3.0.3 - Last Updated: {new Date().toLocaleString('en-US', { 
+                month: 'long', 
+                day: 'numeric', 
+                year: 'numeric', 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                hour12: true,
+                timeZone: 'America/New_York',
+                timeZoneName: 'short'
+              })}
             </p>
             <p className="text-xs text-blue-700 mt-1">
               Latest: Fixed FPS counting for non-pitch outs, corrected rest thresholds to 20/40/60, fixed outs preservation when changing pitcher mid-inning
