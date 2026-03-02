@@ -1627,6 +1627,7 @@ export default function PitchTracker() {
   const PitchTrackingView = () => {
     const [pendingStrikeConfirm, setPendingStrikeConfirm] = React.useState(false);
     const [pendingOutConfirm, setPendingOutConfirm] = React.useState(false);
+    const [pendingStrikeoutConfirm, setPendingStrikeoutConfirm] = React.useState(null); // { outs, balls, strikes, etc. }
     
     // Check if a game is currently in progress
     const gameInProgress = gameState && gameState.selectedPitcher && gameState.pitches && gameState.pitches.length > 0;
@@ -1737,7 +1738,9 @@ export default function PitchTracker() {
     const pitches = gameState.pitches || [];
     const totalPitches = pitches.length;
     const totalStrikes = pitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
+    const totalBalls = pitches.filter(p => p.outcome === 'ball').length;
     const strikePercent = totalPitches > 0 ? Math.round((totalStrikes / totalPitches) * 100) : 0;
+    const ballPercent = totalPitches > 0 ? Math.round((totalBalls / totalPitches) * 100) : 0;
 
     const rhbPitches = pitches.filter(p => p.batterHand === 'R');
     const rhbStrikes = rhbPitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
@@ -1899,71 +1902,20 @@ export default function PitchTracker() {
         }
       } else if (newStrikes >= 3) {
         // Strikeout - but could be uncaught third strike
-        const currentOuts = newOuts; // Store outs before potential increment
-        
-        // Ask if batter reached on uncaught third strike
-        let reachedBase = false;
-        if (currentOuts === 2) {
-          // Two outs - ask if this is end of inning
-          const message = 'Strikeout with 2 outs.\n\nClick "OK" if batter is OUT (end of inning)\nClick "Cancel" if batter REACHED base (uncaught third strike)';
-          reachedBase = !window.confirm(message);
-        } else {
-          // Less than 2 outs - ask if batter reached
-          const message = 'Strikeout!\n\nClick "OK" if batter REACHED base (uncaught third strike)\nClick "Cancel" if batter is OUT';
-          reachedBase = window.confirm(message);
-        }
-        
-        if (reachedBase) {
-          // Uncaught third strike - batter reached base (treat like ball in play, no out)
-          newBallsInPlay++;
-          newBattersFaced++;
-          newAtBats++;
-          atBatCompletes = true;
-          
-          // Update stats since at-bat is complete
-          if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
-          if (newBalls === 3) newThreeBallCounts++;
-          
-          newBalls = 0;
-          newStrikes = 0;
-          newBatterHand = null;
-          newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
-        } else {
-          // Normal strikeout - batter is out
-          newOuts++;
-          newBattersFaced++;
-          newAtBats++;
-          atBatCompletes = true;
-          
-          // NOW update stats since at-bat is complete
-          if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
-          if (newBalls === 3) newThreeBallCounts++;
-          
-          newBalls = 0;
-          newStrikes = 0;
-          newBatterHand = null;
-          newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
-          
-          // Check for end of inning (after confirming the out)
-          if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
-            setGameState({
-              ...gameState,
-              inning: gameState.inning + 1,
-              pitches: updatedPitches,
-              outs: newOuts,
-              battersFaced: newBattersFaced,
-              ballsInPlay: newBallsInPlay,
-              firstPitchStrikes: newFirstPitchStrikes,
-              atBats: newAtBats,
-              threeBallCounts: newThreeBallCounts,
-              balls: newBalls,
-              strikes: newStrikes,
-              batterHand: newBatterHand,
-              currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
-            });
-            return;
-          }
-        }
+        // Show custom dialog instead of proceeding
+        setPendingStrikeoutConfirm({
+          balls: newBalls,
+          strikes: newStrikes,
+          outs: newOuts,
+          battersFaced: newBattersFaced,
+          atBats: newAtBats,
+          ballsInPlay: newBallsInPlay,
+          firstPitchStrikes: newFirstPitchStrikes,
+          threeBallCounts: newThreeBallCounts,
+          currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike,
+          updatedPitches
+        });
+        return; // Wait for user to choose from dialog
       } else if (newBalls >= 4) {
         newBattersFaced++;
         newAtBats++;
@@ -2124,6 +2076,99 @@ export default function PitchTracker() {
       });
     };
 
+    // Handle strikeout dialog choices
+    const handleStrikeoutChoice = (choice) => {
+      if (!pendingStrikeoutConfirm) return;
+      
+      const { 
+        balls, strikes, outs, battersFaced, atBats, ballsInPlay, 
+        firstPitchStrikes, threeBallCounts, currentAtBatFirstPitchStrike, updatedPitches 
+      } = pendingStrikeoutConfirm;
+      
+      if (choice === 'cancel') {
+        // Cancel - undo the last pitch
+        setPendingStrikeoutConfirm(null);
+        undoLastPitch();
+        return;
+      }
+      
+      if (choice === 'uncaught') {
+        // Uncaught third strike - batter reached base
+        const newBallsInPlay = ballsInPlay + 1;
+        const newBattersFaced = battersFaced + 1;
+        const newAtBats = atBats + 1;
+        const newFirstPitchStrikes = currentAtBatFirstPitchStrike ? firstPitchStrikes + 1 : firstPitchStrikes;
+        const newThreeBallCounts = balls === 3 ? threeBallCounts + 1 : threeBallCounts;
+        
+        setGameState({
+          ...gameState,
+          pitches: updatedPitches,
+          balls: 0,
+          strikes: 0,
+          outs: outs,
+          battersFaced: newBattersFaced,
+          ballsInPlay: newBallsInPlay,
+          firstPitchStrikes: newFirstPitchStrikes,
+          atBats: newAtBats,
+          threeBallCounts: newThreeBallCounts,
+          walks: gameState.walks,
+          batterHand: null,
+          currentAtBatFirstPitchStrike: false
+        });
+        
+        setPendingStrikeoutConfirm(null);
+        return;
+      }
+      
+      if (choice === 'out') {
+        // Batter out - normal strikeout
+        const newOuts = outs + 1;
+        const newBattersFaced = battersFaced + 1;
+        const newAtBats = atBats + 1;
+        const newFirstPitchStrikes = currentAtBatFirstPitchStrike ? firstPitchStrikes + 1 : firstPitchStrikes;
+        const newThreeBallCounts = balls === 3 ? threeBallCounts + 1 : threeBallCounts;
+        
+        // Check for end of inning
+        if (newOuts > 0 && newOuts % 3 === 0 && window.confirm('End of Inning?')) {
+          setGameState({
+            ...gameState,
+            inning: gameState.inning + 1,
+            pitches: updatedPitches,
+            outs: newOuts,
+            battersFaced: newBattersFaced,
+            ballsInPlay: ballsInPlay,
+            firstPitchStrikes: newFirstPitchStrikes,
+            atBats: newAtBats,
+            threeBallCounts: newThreeBallCounts,
+            walks: gameState.walks,
+            balls: 0,
+            strikes: 0,
+            batterHand: null,
+            currentAtBatFirstPitchStrike: false
+          });
+        } else {
+          setGameState({
+            ...gameState,
+            pitches: updatedPitches,
+            balls: 0,
+            strikes: 0,
+            outs: newOuts,
+            battersFaced: newBattersFaced,
+            ballsInPlay: ballsInPlay,
+            firstPitchStrikes: newFirstPitchStrikes,
+            atBats: newAtBats,
+            threeBallCounts: newThreeBallCounts,
+            walks: gameState.walks,
+            batterHand: null,
+            currentAtBatFirstPitchStrike: false
+          });
+        }
+        
+        setPendingStrikeoutConfirm(null);
+        return;
+      }
+    };
+
     const endOuting = () => {
       // Calculate innings in baseball notation: full innings + partial
       const fullInnings = Math.floor(gameState.outs / 3);
@@ -2175,8 +2220,10 @@ export default function PitchTracker() {
         innings: innings, // String format: "2", "2+", "2++"
         outs: gameState.outs, // For calculations
         strikePercent,
+        ballPercent,
         battersFaced: gameState.battersFaced,
         strikes: totalStrikes,
+        balls: totalBalls,
         swingingStrikes,
         calledStrikes,
         lhbPitches: lhbPitches.length,
@@ -2343,6 +2390,41 @@ export default function PitchTracker() {
               </div>
             </div>
           )}
+          
+          {/* Strikeout Confirmation Dialog */}
+          {pendingStrikeoutConfirm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+                <h3 className="text-2xl font-bold mb-2 text-center text-gray-800">⚾ Strikeout!</h3>
+                <p className="text-center text-gray-600 mb-6">What happened on the play?</p>
+                
+                <div className="space-y-3">
+                  <button
+                    onClick={() => handleStrikeoutChoice('uncaught')}
+                    className="w-full bg-blue-500 text-white py-4 px-4 rounded-lg font-bold text-lg hover:bg-blue-600 transition"
+                  >
+                    🏃 Uncaught Third Strike
+                    <span className="block text-sm font-normal mt-1">(Batter reached base)</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => handleStrikeoutChoice('out')}
+                    className="w-full bg-purple-500 text-white py-4 px-4 rounded-lg font-bold text-lg hover:bg-purple-600 transition"
+                  >
+                    ❌ Batter Out
+                    <span className="block text-sm font-normal mt-1">(Normal strikeout)</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => handleStrikeoutChoice('cancel')}
+                    className="w-full bg-yellow-500 text-white py-3 px-4 rounded-lg font-semibold hover:bg-yellow-600 transition"
+                  >
+                    ↶ Cancel & Undo Last Pitch
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2 mb-4">
             <button onClick={endInning} className="bg-gray-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-gray-700">END INNING</button>
@@ -2445,18 +2527,65 @@ export default function PitchTracker() {
   const GameEndView = () => {
     const gamePitchers = gameState?.pitchers || [];
     
-    const teamTotals = gamePitchers.reduce((acc, p) => ({
+    // Check if there's a current pitcher who hasn't ended their outing yet
+    let allGamePitchers = [...gamePitchers];
+    if (gameState?.selectedPitcher && gameState?.pitches?.length > 0) {
+      // Current pitcher still in game - include their stats
+      const currentPitcher = allPitchers.find(p => p.id === gameState.selectedPitcher);
+      if (currentPitcher) {
+        const pitches = gameState.pitches || [];
+        const totalPitches = pitches.length;
+        const totalStrikes = pitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
+        const totalBalls = pitches.filter(p => p.outcome === 'ball').length;
+        const strikePercent = totalPitches > 0 ? Math.round((totalStrikes / totalPitches) * 100) : 0;
+        const ballPercent = totalPitches > 0 ? Math.round((totalBalls / totalPitches) * 100) : 0;
+        
+        const lhbPitches = pitches.filter(p => p.batterHand === 'L');
+        const lhbStrikes = lhbPitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
+        const rhbPitches = pitches.filter(p => p.batterHand === 'R');
+        const rhbStrikes = rhbPitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
+        
+        const innings = Math.floor(gameState.outs / 3) + ((gameState.outs % 3) / 10);
+        
+        // Create temporary gameData for current pitcher
+        const currentGameData = {
+          totalPitches,
+          strikes: totalStrikes,
+          balls: totalBalls,
+          strikePercent,
+          ballPercent,
+          battersFaced: gameState.battersFaced || 0,
+          outs: gameState.outs || 0,
+          innings,
+          rhbPitches: rhbPitches.length,
+          rhbStrikes,
+          lhbPitches: lhbPitches.length,
+          lhbStrikes,
+          ballsInPlay: gameState.ballsInPlay || 0,
+          firstPitchStrikes: gameState.firstPitchStrikes || 0,
+          threeBallCounts: gameState.threeBallCounts || 0,
+          walks: gameState.walks || 0,
+          walkPercent: gameState.battersFaced > 0 ? Math.round((gameState.walks / gameState.battersFaced) * 100) : 0
+        };
+        
+        allGamePitchers.push({ pitcher: currentPitcher, gameData: currentGameData });
+      }
+    }
+    
+    const teamTotals = allGamePitchers.reduce((acc, p) => ({
       totalPitches: acc.totalPitches + p.gameData.totalPitches,
       strikes: acc.strikes + p.gameData.strikes,
+      balls: acc.balls + (p.gameData.balls || 0),
       battersFaced: acc.battersFaced + p.gameData.battersFaced,
-      outs: acc.outs + (p.gameData.outs || 0), // Use saved outs count
+      outs: acc.outs + (p.gameData.outs || 0),
       rhbPitches: acc.rhbPitches + p.gameData.rhbPitches,
       rhbStrikes: acc.rhbStrikes + p.gameData.rhbStrikes,
       lhbPitches: acc.lhbPitches + p.gameData.lhbPitches,
       lhbStrikes: acc.lhbStrikes + p.gameData.lhbStrikes
-    }), { totalPitches: 0, strikes: 0, battersFaced: 0, outs: 0, rhbPitches: 0, rhbStrikes: 0, lhbPitches: 0, lhbStrikes: 0 });
+    }), { totalPitches: 0, strikes: 0, balls: 0, battersFaced: 0, outs: 0, rhbPitches: 0, rhbStrikes: 0, lhbPitches: 0, lhbStrikes: 0 });
 
     const teamStrikePercent = teamTotals.totalPitches > 0 ? Math.round((teamTotals.strikes / teamTotals.totalPitches) * 100) : 0;
+    const teamBallPercent = teamTotals.totalPitches > 0 ? Math.round((teamTotals.balls / teamTotals.totalPitches) * 100) : 0;
     const teamRhbPercent = teamTotals.rhbPitches > 0 ? Math.round((teamTotals.rhbStrikes / teamTotals.rhbPitches) * 100) : 0;
     const teamLhbPercent = teamTotals.lhbPitches > 0 ? Math.round((teamTotals.lhbStrikes / teamTotals.lhbPitches) * 100) : 0;
 
@@ -2472,14 +2601,15 @@ export default function PitchTracker() {
       
       report += 'TEAM PITCHING TOTALS:\n';
       report += `Total Pitches: ${teamTotals.totalPitches}\n`;
-      report += `Strike %: ${teamStrikePercent}%\n`;
+      report += `Strike %: ${teamStrikePercent}% | Ball %: ${teamBallPercent}%\n`;
       report += `Batters Faced: ${teamTotals.battersFaced}\n`;
       report += `Outs Recorded: ${teamTotals.outs}\n`;
       report += `vs RHB: ${teamRhbPercent}% | vs LHB: ${teamLhbPercent}%\n\n`;
       
       report += 'INDIVIDUAL PITCHER LINES:\n';
-      gamePitchers.forEach(p => {
-        report += `${p.pitcher.fullName}: ${p.gameData.totalPitches} pitches | ${p.gameData.innings} IP | ${p.gameData.strikePercent}% strikes\n`;
+      allGamePitchers.forEach(p => {
+        const ballPct = p.gameData.ballPercent || (p.gameData.totalPitches > 0 ? Math.round(((p.gameData.balls || 0) / p.gameData.totalPitches) * 100) : 0);
+        report += `${p.pitcher.fullName}: ${p.gameData.totalPitches} pitches | ${p.gameData.innings} IP | ${p.gameData.strikePercent}% strikes | ${ballPct}% balls\n`;
       });
       report += '\n';
       
@@ -2558,7 +2688,7 @@ export default function PitchTracker() {
               <p>Team: {currentTeam.name}</p>
               <p>Date: {new Date().toLocaleDateString()}</p>
               <p>Total Pitches: {teamTotals.totalPitches}</p>
-              <p>Strike %: <StrikeBadge percentage={teamStrikePercent} /></p>
+              <p>Strike %: <StrikeBadge percentage={teamStrikePercent} /> | Ball %: {teamBallPercent}%</p>
               <p>Batters Faced: {teamTotals.battersFaced}</p>
               <p>Outs Recorded: {teamTotals.outs}</p>
               <p>vs RHB: <StrikeBadge percentage={teamRhbPercent} /> | vs LHB: <StrikeBadge percentage={teamLhbPercent} /></p>
@@ -2568,21 +2698,26 @@ export default function PitchTracker() {
           <div className="bg-white rounded-lg p-6 shadow mb-4">
             <h2 className="text-xl font-bold mb-4">Individual Pitcher Lines</h2>
             <div className="space-y-3">
-              {gamePitchers.map((p, i) => (
-                <div key={i} className="border-b pb-2 last:border-b-0">
-                  <p className="text-sm font-semibold">
-                    {p.pitcher.fullName}: {p.gameData.totalPitches} pitches | {p.gameData.innings} IP | <StrikeBadge percentage={p.gameData.strikePercent} />
-                  </p>
-                  {(p.gameData.swingingStrikes || p.gameData.calledStrikes) && (
-                    <p className="text-xs text-gray-600 mt-1">
-                      Strike Details: {p.gameData.swingingStrikes || 0} Swinging | {p.gameData.calledStrikes || 0} Called
+              {allGamePitchers.map((p, i) => {
+                const ballPct = p.gameData.ballPercent || (p.gameData.totalPitches > 0 ? Math.round(((p.gameData.balls || 0) / p.gameData.totalPitches) * 100) : 0);
+                return (
+                  <div key={i} className="border-b pb-2 last:border-b-0">
+                    <p className="text-sm font-semibold">
+                      {p.pitcher.fullName}: {p.gameData.totalPitches} pitches | {p.gameData.innings} IP | <StrikeBadge percentage={p.gameData.strikePercent} />
                     </p>
-                  )}
-                  {(p.gameData.walks !== undefined || p.gameData.walkPercent !== undefined) && (
                     <p className="text-xs text-gray-600 mt-1">
-                      Walks: {p.gameData.walks || 0} | Walk %: {p.gameData.walkPercent || 0}%
+                      Ball %: {ballPct}%
                     </p>
-                  )}
+                    {(p.gameData.swingingStrikes || p.gameData.calledStrikes) && (
+                      <p className="text-xs text-gray-600 mt-1">
+                        Strike Details: {p.gameData.swingingStrikes || 0} Swinging | {p.gameData.calledStrikes || 0} Called
+                      </p>
+                    )}
+                    {(p.gameData.walks !== undefined || p.gameData.walkPercent !== undefined) && (
+                      <p className="text-xs text-gray-600 mt-1">
+                        Walks: {p.gameData.walks || 0} | Walk %: {p.gameData.walkPercent || 0}%
+                      </p>
+                    )}
                   {p.gameData.mandatoryRestDays !== undefined && (
                     <p className={`text-xs mt-1 font-semibold ${p.gameData.mandatoryRestDays === 0 ? 'text-green-600' : p.gameData.mandatoryRestDays >= 4 ? 'text-red-600' : 'text-orange-600'}`}>
                       Mandatory Rest: {p.gameData.mandatoryRestDays} {p.gameData.mandatoryRestDays === 1 ? 'day' : 'days'} 
@@ -2595,7 +2730,8 @@ export default function PitchTracker() {
                     </p>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
 
