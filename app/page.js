@@ -1838,7 +1838,10 @@ export default function PitchTracker() {
 
       if (outcome === 'ball') {
         newBalls++;
-        // Don't increment threeBallCounts yet - wait for at-bat to complete
+        // Track 3-ball count when reaching exactly 3 balls
+        if (newBalls === 3) {
+          newThreeBallCounts++;
+        }
       } else if (outcome === 'foul') {
         // Foul ball logic:
         // - Always counts as a strike UNLESS already at 2 strikes
@@ -1861,7 +1864,6 @@ export default function PitchTracker() {
         
         // NOW update stats since at-bat is complete
         if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
-        if (newBalls === 3) newThreeBallCounts++;
         
         newBalls = 0;
         newStrikes = 0;
@@ -1875,7 +1877,6 @@ export default function PitchTracker() {
         
         // NOW update stats since at-bat is complete
         if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
-        if (newBalls === 3) newThreeBallCounts++;
         
         newBalls = 0;
         newStrikes = 0;
@@ -1924,7 +1925,6 @@ export default function PitchTracker() {
         
         // NOW update stats since at-bat is complete
         if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
-        if (newBalls === 3) newThreeBallCounts++;  // Was 3 before the 4th ball
         
         newBalls = 0;
         newStrikes = 0;
