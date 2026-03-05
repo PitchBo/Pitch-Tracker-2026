@@ -2037,6 +2037,8 @@ export default function PitchTracker() {
       let newAtBats = gameState.atBats;
       let newThreeBallCounts = gameState.threeBallCounts;
       let newWalks = gameState.walks || 0;
+      let newRunnersOnBase = gameState.runnersOnBase || 0;
+      let newRunsScored = gameState.runsScored || 0;
       let newBatterHand = gameState.batterHand;
       let newCurrentAtBatFirstPitchStrike = gameState.currentAtBatFirstPitchStrike || false;
       
@@ -2075,8 +2077,8 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // Handle runners and runs
-        let newRunnersOnBase = gameState.runnersOnBase || 0;
-        let newRunsScored = (gameState.runsScored || 0) + runsScored;
+        newRunnersOnBase = gameState.runnersOnBase || 0;
+        newRunsScored = (gameState.runsScored || 0) + runsScored;
         
         // Add batter to bases
         newRunnersOnBase++;
@@ -2173,7 +2175,7 @@ export default function PitchTracker() {
         atBatCompletes = true;
         
         // Add runner for walk
-        let newRunnersOnBase = (gameState.runnersOnBase || 0) + 1;
+        newRunnersOnBase = (gameState.runnersOnBase || 0) + 1;
         // Cap at 3, but if already 3, this means bases loaded walk = run scores
         if (newRunnersOnBase > 3) {
           // This will be handled by runs dialog for bases loaded
@@ -2201,8 +2203,8 @@ export default function PitchTracker() {
         atBats: newAtBats,
         threeBallCounts: newThreeBallCounts,
         walks: newWalks,
-        runnersOnBase: gameState.runnersOnBase || 0, // Preserve runners if not changed
-        runsScored: gameState.runsScored || 0, // Preserve runs if not changed
+        runnersOnBase: newRunnersOnBase,
+        runsScored: newRunsScored,
         batterHand: newBatterHand,
         currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
       });
@@ -4016,7 +4018,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.1 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.2 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
