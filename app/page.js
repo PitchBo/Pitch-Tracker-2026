@@ -1095,7 +1095,7 @@ export default function PitchTracker() {
                   
                   {/* Last 6 Months Stats */}
                   <div className="bg-blue-50 rounded-lg p-4 mb-6">
-                    <h3 className="text-xl font-bold mb-4 text-blue-900">Last 6 Months Summary ({recentGames.length} games)</h3>
+                    <h3 className="text-xl font-bold mb-4 text-blue-900">Cumulative Stats to Date ({recentGames.length} games)</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="bg-white p-3 rounded shadow-sm">
                         <p className="text-xs text-gray-600">Total Pitches</p>
@@ -1138,11 +1138,11 @@ export default function PitchTracker() {
                         <p className="text-2xl font-bold text-gray-600">{totalBIP}</p>
                       </div>
                       <div className="bg-white p-3 rounded shadow-sm">
-                        <p className="text-xs text-gray-600">vs RHB</p>
+                        <p className="text-xs text-gray-600">Strikes vs RHB</p>
                         <p className="text-2xl font-bold text-blue-600">{rhbPercent}%</p>
                       </div>
                       <div className="bg-white p-3 rounded shadow-sm">
-                        <p className="text-xs text-gray-600">vs LHB</p>
+                        <p className="text-xs text-gray-600">Strikes vs LHB</p>
                         <p className="text-2xl font-bold text-purple-600">{lhbPercent}%</p>
                       </div>
                     </div>
@@ -2174,13 +2174,32 @@ export default function PitchTracker() {
         newWalks++; // Walk issued
         atBatCompletes = true;
         
-        // Add runner for walk
-        newRunnersOnBase = (gameState.runnersOnBase || 0) + 1;
-        // Cap at 3, but if already 3, this means bases loaded walk = run scores
-        if (newRunnersOnBase > 3) {
-          // This will be handled by runs dialog for bases loaded
-          newRunnersOnBase = 3;
+        // Check if bases are loaded
+        const basesLoaded = (gameState.runnersOnBase || 0) >= 3;
+        
+        if (basesLoaded) {
+          // Bases loaded walk - at least 1 run must score
+          // Show dialog to ask how many runs scored (1-4 possible)
+          // Store the pending state
+          setPendingRunsScored({ 
+            type: 'walk', 
+            maxRuns: 4,
+            pendingOutcome: {
+              balls: 0,
+              strikes: 0,
+              batterHand: null,
+              battersFaced: newBattersFaced,
+              atBats: newAtBats,
+              walks: newWalks,
+              firstPitchStrikes: newCurrentAtBatFirstPitchStrike ? newFirstPitchStrikes + 1 : newFirstPitchStrikes,
+              pitches: updatedPitches
+            }
+          });
+          return; // Wait for dialog
         }
+        
+        // Normal walk - add runner
+        newRunnersOnBase = (gameState.runnersOnBase || 0) + 1;
         
         // NOW update stats since at-bat is complete
         if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
@@ -2484,6 +2503,7 @@ export default function PitchTracker() {
         strikePercent,
         ballPercent,
         battersFaced: gameState.battersFaced,
+        atBats: gameState.atBats || 0,
         strikes: totalStrikes,
         balls: totalBalls,
         swingingStrikes,
@@ -2790,31 +2810,62 @@ export default function PitchTracker() {
           {pendingRunsScored && (() => {
             const maxRuns = pendingRunsScored.maxRuns || 4;
             const runners = gameState.runnersOnBase || 0;
+            const isWalk = pendingRunsScored.type === 'walk';
+            
             // For manual entry, can only score runners already on base
             // For reachedSafely, can score runners + batter
+            // For walk with bases loaded, minimum 1 run must score
             const actualMax = pendingRunsScored.type === 'manual' 
               ? Math.min(maxRuns, runners) 
               : Math.min(maxRuns, runners + 1);
             
+            const minRuns = isWalk ? 1 : 0; // Bases loaded walk forces at least 1 run
+            
             return (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-6 max-w-md mx-4">
-                  <h3 className="text-2xl font-bold mb-2 text-center text-gray-800">📊 Runs Scored</h3>
+                  <h3 className="text-2xl font-bold mb-2 text-center text-gray-800">
+                    {isWalk ? '🏃 Bases Loaded Walk!' : '📊 Runs Scored'}
+                  </h3>
                   <p className="text-center text-gray-600 mb-2">
                     Runners on base: <span className="font-bold text-blue-600">{runners}</span>
                   </p>
+                  {isWalk && (
+                    <p className="text-center text-orange-600 font-semibold mb-2">
+                      At least 1 run must score
+                    </p>
+                  )}
                   <p className="text-center text-gray-600 mb-6">
                     How many runs scored on this play?
                   </p>
                   
                   <div className="grid grid-cols-3 gap-3 mb-4">
-                    {[0, 1, 2, 3, 4].filter(n => n <= actualMax).map(runs => (
+                    {[0, 1, 2, 3, 4].filter(n => n >= minRuns && n <= actualMax).map(runs => (
                       <button
                         key={runs}
                         onClick={() => {
                           if (pendingRunsScored.type === 'reachedSafely') {
                             // Batter reached safely with runs
                             recordPitch('ballInPlay', {}, runs);
+                          } else if (pendingRunsScored.type === 'walk') {
+                            // Bases loaded walk - complete the walk with runs
+                            const pending = pendingRunsScored.pendingOutcome;
+                            const newRuns = (gameState.runsScored || 0) + runs;
+                            const newRunners = 3; // Bases still loaded after walk
+                            
+                            setGameState({
+                              ...gameState,
+                              pitches: pending.pitches,
+                              balls: pending.balls,
+                              strikes: pending.strikes,
+                              batterHand: pending.batterHand,
+                              battersFaced: pending.battersFaced,
+                              atBats: pending.atBats,
+                              walks: pending.walks,
+                              firstPitchStrikes: pending.firstPitchStrikes,
+                              runnersOnBase: newRunners,
+                              runsScored: newRuns
+                            });
                           } else if (pendingRunsScored.type === 'manual') {
                             // Manual runs entry
                             const newRuns = (gameState.runsScored || 0) + runs;
@@ -3340,6 +3391,7 @@ export default function PitchTracker() {
                     strikePercent,
                     ballPercent,
                     battersFaced: gameState.battersFaced || 0,
+                    atBats: gameState.atBats || 0,
                     strikes: totalStrikes,
                     balls: totalBalls,
                     swingingStrikes,
@@ -4018,7 +4070,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.2 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.4 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
