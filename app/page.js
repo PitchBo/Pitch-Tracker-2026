@@ -2380,6 +2380,9 @@ export default function PitchTracker() {
         const newFirstPitchStrikes = currentAtBatFirstPitchStrike ? firstPitchStrikes + 1 : firstPitchStrikes;
         const newThreeBallCounts = balls === 3 ? threeBallCounts + 1 : threeBallCounts;
         
+        // Add runner since batter reached base
+        const newRunnersOnBase = Math.min(3, (gameState.runnersOnBase || 0) + 1);
+        
         setGameState({
           ...gameState,
           pitches: updatedPitches,
@@ -2392,6 +2395,7 @@ export default function PitchTracker() {
           atBats: newAtBats,
           threeBallCounts: newThreeBallCounts,
           walks: gameState.walks,
+          runnersOnBase: newRunnersOnBase,
           batterHand: null,
           currentAtBatFirstPitchStrike: false
         });
@@ -4070,7 +4074,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.4 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.5 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
