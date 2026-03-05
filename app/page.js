@@ -1827,6 +1827,7 @@ export default function PitchTracker() {
     const [pendingOutConfirm, setPendingOutConfirm] = React.useState(false);
     const [pendingStrikeoutConfirm, setPendingStrikeoutConfirm] = React.useState(null); // { outs, balls, strikes, etc. }
     const [pendingExtraInningsCheck, setPendingExtraInningsCheck] = React.useState(false);
+    const [pendingRunsScored, setPendingRunsScored] = React.useState(null); // { type: 'manual' | 'reachedSafely', maxRuns, pendingOutcome }
     
     // Check if a game is currently in progress
     const gameInProgress = gameState && gameState.selectedPitcher && gameState.pitches && gameState.pitches.length > 0;
@@ -1878,6 +1879,8 @@ export default function PitchTracker() {
                         atBats: 0,
                         threeBallCounts: 0,
                         walks: 0,
+                        runnersOnBase: midInning && gameState?.runnersOnBase ? gameState.runnersOnBase : 0, // Preserve runners if mid-inning
+                        runsScored: midInning && gameState?.runsScored ? gameState.runsScored : 0, // Preserve runs if mid-inning
                         currentAtBatFirstPitchStrike: false
                       });
                     }}
@@ -1961,9 +1964,15 @@ export default function PitchTracker() {
       return data.slice(-20);
     };
 
-    const recordPitch = (outcome, metadata = {}) => {
+    const recordPitch = (outcome, metadata = {}, runsScored = 0) => {
       // Allow non-pitch outs without batter handedness (pickoff, caught stealing before next batter)
       const isNonPitchOut = outcome === 'out' && metadata.outType === 'nonpitch';
+      
+      // Check if there are runners on base for non-pitch outs
+      if (isNonPitchOut && (gameState.runnersOnBase || 0) === 0) {
+        alert('Cannot record a base out - no runners on base!');
+        return;
+      }
       
       if (!gameState.batterHand && !isNonPitchOut) {
         alert('Please select batter handedness first');
@@ -1973,6 +1982,8 @@ export default function PitchTracker() {
       // Special handling for non-pitch outs (pickoffs, caught stealing, thrown out on bases)
       if (isNonPitchOut) {
         const newOuts = gameState.outs + 1;
+        let newRunnersOnBase = Math.max(0, (gameState.runnersOnBase || 0) - 1); // Remove runner who was out
+        
         // Only increment battersFaced and atBats if there was actually a batter
         // (balls > 0 or strikes > 0 means batter was at plate)
         const batterWasAtPlate = gameState.balls > 0 || gameState.strikes > 0;
@@ -1987,6 +1998,7 @@ export default function PitchTracker() {
             outs: newOuts,
             battersFaced: newBattersFaced,
             atBats: newAtBats,
+            runnersOnBase: 0, // Clear bases at end of inning
             // Reset count for new inning
             balls: 0,
             strikes: 0,
@@ -2000,7 +2012,8 @@ export default function PitchTracker() {
           ...gameState,
           outs: newOuts,
           battersFaced: newBattersFaced,
-          atBats: newAtBats
+          atBats: newAtBats,
+          runnersOnBase: newRunnersOnBase
           // Keep balls, strikes, batterHand for current batter
         });
         return;
@@ -2061,6 +2074,22 @@ export default function PitchTracker() {
         newAtBats++;
         atBatCompletes = true;
         
+        // Handle runners and runs
+        let newRunnersOnBase = gameState.runnersOnBase || 0;
+        let newRunsScored = (gameState.runsScored || 0) + runsScored;
+        
+        // Add batter to bases
+        newRunnersOnBase++;
+        
+        // Adjust for runs scored
+        if (runsScored > 0) {
+          // Runners who scored are removed from bases
+          newRunnersOnBase = Math.max(0, newRunnersOnBase - runsScored);
+        }
+        
+        // Cap at 3 runners
+        newRunnersOnBase = Math.min(3, newRunnersOnBase);
+        
         // NOW update stats since at-bat is complete
         if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
         
@@ -2068,6 +2097,25 @@ export default function PitchTracker() {
         newStrikes = 0;
         newBatterHand = null;
         newCurrentAtBatFirstPitchStrike = false; // Reset for next at-bat
+        
+        setGameState({
+          ...gameState,
+          pitches: updatedPitches,
+          balls: newBalls,
+          strikes: newStrikes,
+          outs: newOuts,
+          battersFaced: newBattersFaced,
+          ballsInPlay: newBallsInPlay,
+          firstPitchStrikes: newFirstPitchStrikes,
+          atBats: newAtBats,
+          threeBallCounts: newThreeBallCounts,
+          walks: newWalks,
+          runnersOnBase: newRunnersOnBase,
+          runsScored: newRunsScored,
+          batterHand: newBatterHand,
+          currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
+        });
+        return;
       } else if (outcome === 'out') {
         newOuts++;
         newBattersFaced++;
@@ -2093,6 +2141,8 @@ export default function PitchTracker() {
             firstPitchStrikes: newFirstPitchStrikes,
             atBats: newAtBats,
             threeBallCounts: newThreeBallCounts,
+            walks: newWalks,
+            runnersOnBase: 0, // Clear bases at end of inning
             balls: newBalls,
             strikes: newStrikes,
             batterHand: newBatterHand,
@@ -2122,6 +2172,14 @@ export default function PitchTracker() {
         newWalks++; // Walk issued
         atBatCompletes = true;
         
+        // Add runner for walk
+        let newRunnersOnBase = (gameState.runnersOnBase || 0) + 1;
+        // Cap at 3, but if already 3, this means bases loaded walk = run scores
+        if (newRunnersOnBase > 3) {
+          // This will be handled by runs dialog for bases loaded
+          newRunnersOnBase = 3;
+        }
+        
         // NOW update stats since at-bat is complete
         if (newCurrentAtBatFirstPitchStrike) newFirstPitchStrikes++;
         
@@ -2143,6 +2201,8 @@ export default function PitchTracker() {
         atBats: newAtBats,
         threeBallCounts: newThreeBallCounts,
         walks: newWalks,
+        runnersOnBase: gameState.runnersOnBase || 0, // Preserve runners if not changed
+        runsScored: gameState.runsScored || 0, // Preserve runs if not changed
         batterHand: newBatterHand,
         currentAtBatFirstPitchStrike: newCurrentAtBatFirstPitchStrike
       });
@@ -2340,6 +2400,7 @@ export default function PitchTracker() {
             atBats: newAtBats,
             threeBallCounts: newThreeBallCounts,
             walks: gameState.walks,
+            runnersOnBase: 0, // Clear bases at end of inning
             balls: 0,
             strikes: 0,
             batterHand: null,
@@ -2510,7 +2571,16 @@ export default function PitchTracker() {
           <div className="grid grid-cols-2 gap-2 mb-3">
             <button onClick={() => recordPitch('ball')} className="bg-red-500 text-white py-3 rounded-lg font-bold text-base hover:bg-red-600">BALL</button>
             <button onClick={() => setPendingStrikeConfirm(true)} className="bg-green-500 text-white py-3 rounded-lg font-bold text-base hover:bg-green-600">STRIKE</button>
-            <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BATTER REACHED SAFELY</button>
+            <button onClick={() => {
+              // Check if bases are loaded (3 runners on base)
+              if ((gameState.runnersOnBase || 0) >= 3) {
+                // Bases loaded - ask how many runs scored (1-4)
+                setPendingRunsScored({ type: 'reachedSafely', maxRuns: 4 });
+              } else {
+                // Normal - just record the hit
+                recordPitch('ballInPlay');
+              }
+            }} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BATTER REACHED SAFELY</button>
             <button onClick={() => {
               // Check if batter handedness has been selected
               const batterSelected = gameState.batterHand !== null;
@@ -2538,7 +2608,32 @@ export default function PitchTracker() {
 
           <div className="grid grid-cols-2 gap-2 mb-3">
             <button onClick={undoLastPitch} className="bg-yellow-500 text-white py-2 rounded-lg font-semibold text-sm hover:bg-yellow-600">↶ UNDO</button>
+            <button 
+              onClick={() => {
+                const maxRuns = Math.min(4, (gameState.runnersOnBase || 0) + 1);
+                setPendingRunsScored({ type: 'manual', maxRuns, pendingOutcome: null });
+              }}
+              className="bg-green-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-green-700"
+            >
+              📊 RUNS SCORED
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2 mb-3">
             <button onClick={() => recordPitch('foul', { strikeType: 'swinging' })} className="bg-orange-400 text-white py-2 rounded-lg font-semibold text-sm hover:bg-orange-500">FOUL BALL</button>
+            <div></div>
+          </div>
+          
+          {/* Runners and Runs Display */}
+          <div className="bg-gradient-to-r from-blue-50 to-green-50 p-3 rounded-lg mb-3 border border-blue-200">
+            <div className="grid grid-cols-2 gap-2 text-sm font-semibold">
+              <div className="text-blue-700">
+                🏃 Runners: {gameState.runnersOnBase || 0}/3
+              </div>
+              <div className="text-green-700">
+                ⚾ Runs: {gameState.runsScored || 0}
+              </div>
+            </div>
           </div>
           
           {/* Strike Type Confirmation Dialog */}
@@ -2598,8 +2693,8 @@ export default function PitchTracker() {
                     }}
                     className="bg-orange-600 text-white py-4 px-4 rounded-lg font-bold hover:bg-orange-700"
                   >
-                    Thrown Out / Picked Off
-                    <span className="block text-xs font-normal mt-1">(pickoff, caught stealing, out on bases)</span>
+                    Base Out
+                    <span className="block text-xs font-normal mt-1">(Thrown out / Picked off / Caught stealing / Double play)</span>
                   </button>
                 </div>
                 <button
@@ -2683,6 +2778,70 @@ export default function PitchTracker() {
               </div>
             </div>
           )}
+
+          {/* Runs Scored Dialog */}
+          {pendingRunsScored && (() => {
+            const maxRuns = pendingRunsScored.maxRuns || 4;
+            const runners = gameState.runnersOnBase || 0;
+            const actualMax = Math.min(maxRuns, runners + 1); // Can't score more than runners + batter
+            
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+                  <h3 className="text-2xl font-bold mb-2 text-center text-gray-800">📊 Runs Scored</h3>
+                  <p className="text-center text-gray-600 mb-2">
+                    Runners on base: <span className="font-bold text-blue-600">{runners}</span>
+                  </p>
+                  <p className="text-center text-gray-600 mb-6">
+                    How many runs scored on this play?
+                  </p>
+                  
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    {[0, 1, 2, 3, 4].filter(n => n <= actualMax).map(runs => (
+                      <button
+                        key={runs}
+                        onClick={() => {
+                          if (pendingRunsScored.type === 'reachedSafely') {
+                            // Batter reached safely with runs
+                            recordPitch('ballInPlay', {}, runs);
+                          } else if (pendingRunsScored.type === 'manual') {
+                            // Manual runs entry
+                            const newRuns = (gameState.runsScored || 0) + runs;
+                            const newRunners = Math.max(0, (gameState.runnersOnBase || 0) - runs);
+                            setGameState({
+                              ...gameState,
+                              runsScored: newRuns,
+                              runnersOnBase: newRunners
+                            });
+                          }
+                          setPendingRunsScored(null);
+                        }}
+                        className={`py-4 px-2 rounded-lg font-bold text-xl transition ${
+                          runs === 0 
+                            ? 'bg-gray-400 text-white hover:bg-gray-500' 
+                            : runs === 4
+                            ? 'bg-green-600 text-white hover:bg-green-700'
+                            : 'bg-blue-500 text-white hover:bg-blue-600'
+                        }`}
+                      >
+                        {runs}
+                        <span className="block text-xs font-normal mt-1">
+                          {runs === 0 ? 'None' : runs === 1 ? 'Run' : 'Runs'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <button
+                    onClick={() => setPendingRunsScored(null)}
+                    className="w-full bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-2 gap-2 mb-4">
             <button onClick={endInning} className="bg-gray-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-gray-700">END INNING</button>
@@ -3848,7 +4007,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.0.9 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.0 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
@@ -3860,7 +4019,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
               })}
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Latest: Fixed FPS counting for non-pitch outs, corrected rest thresholds to 20/40/60, fixed outs preservation when changing pitcher mid-inning
+              Latest: Added runners on base tracking (0-3), runs scored tracking, runs dialog, manual RUNS SCORED button, prevented base outs with no runners, added Double Play option, fixed inning increment
             </p>
           </div>
 
