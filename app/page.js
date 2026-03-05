@@ -2512,9 +2512,16 @@ export default function PitchTracker() {
             <button onClick={() => setPendingStrikeConfirm(true)} className="bg-green-500 text-white py-3 rounded-lg font-bold text-base hover:bg-green-600">STRIKE</button>
             <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BATTER REACHED SAFELY</button>
             <button onClick={() => {
-              // Check if this is start of inning with no one on base
-              // battersFaced for THIS PITCHER could be 0, but someone from previous pitcher could be on base
-              // Better check: has anyone reached base this inning?
+              // Check if batter handedness has been selected
+              const batterSelected = gameState.batterHand !== null;
+              
+              // If batter is selected, they can be out (normal scenario)
+              if (batterSelected) {
+                setPendingOutConfirm(true);
+                return;
+              }
+              
+              // No batter selected yet - check if this is start of inning with no one on base
               const noOneOnBase = gameState.ballsInPlay === 0;
               const startOfInning = gameState.battersFaced === 0;
               
@@ -3841,7 +3848,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.0.8 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.0.9 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
