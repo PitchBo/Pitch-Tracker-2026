@@ -653,16 +653,24 @@ export default function PitchTracker() {
 
     const deletePitcherStats = (pitcherId) => {
       if (window.confirm('Delete all stats for this pitcher? This will remove all game and training data but keep the pitcher information (name, birthday, phone, pitch arsenal).')) {
+        const pitcher = allPitchers.find(p => p.id === pitcherId);
+        if (!pitcher) return;
+        
+        const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcherId));
+        const maxPitches = pitcherTeam ? calculateMaxPitches(pitcher.age, pitcherTeam.organization) : 85;
+        
         setAllPitchers(allPitchers.map(p => 
           p.id === pitcherId 
             ? { 
                 ...p, 
                 games: [], 
                 trainingSessions: [],
-                availableToday: calculateMaxPitches(p.age, teams.find(t => t.pitcherIds.includes(p.id))?.organization)
+                availableToday: maxPitches
               }
             : p
         ));
+        
+        alert('Stats deleted successfully! The pitcher information has been kept.');
       }
     };
 
@@ -4081,7 +4089,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.8 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.9 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
