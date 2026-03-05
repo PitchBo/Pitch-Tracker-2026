@@ -32,6 +32,7 @@ const calculateAge = (birthday) => {
 
 export default function PitchTracker() {
   const [currentView, setCurrentView] = useState('dashboard');
+  const [viewingPitcherStats, setViewingPitcherStats] = useState(null); // Pitcher ID for stats view in All Pitchers page
   const [teams, setTeams] = useState([]);
   const [allPitchers, setAllPitchers] = useState([]);
   const [currentTeam, setCurrentTeam] = useState(null);
@@ -1013,13 +1014,21 @@ export default function PitchTracker() {
                         </div>
 
                         {hasStats && (
-                          <button
-                            onClick={() => deletePitcherStats(pitcher.id)}
-                            className="w-full bg-orange-100 text-orange-700 px-4 py-2 rounded hover:bg-orange-200 flex items-center justify-center gap-2"
-                          >
-                            <Trash2 size={16} />
+                          <div className="space-y-2">
+                            <button
+                              onClick={() => setViewingPitcherStats(pitcher.id)}
+                              className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center justify-center gap-2 font-semibold"
+                            >
+                              📊 View Complete Stats
+                            </button>
+                            <button
+                              onClick={() => deletePitcherStats(pitcher.id)}
+                              className="w-full bg-orange-100 text-orange-700 px-4 py-2 rounded hover:bg-orange-200 flex items-center justify-center gap-2"
+                            >
+                              <Trash2 size={16} />
                             Delete All Stats (Keep Pitcher)
                           </button>
+                          </div>
                         )}
                       </div>
                     );
@@ -1028,6 +1037,195 @@ export default function PitchTracker() {
               )}
             </>
           )}
+
+          {/* Pitcher Stats View Modal */}
+          {viewingPitcherStats && (() => {
+            const pitcher = allPitchers.find(p => p.id === viewingPitcherStats);
+            if (!pitcher) return null;
+            
+            const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcher.id));
+            
+            // Calculate last 6 months stats
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+            
+            const recentGames = (pitcher.games || []).filter(g => new Date(g.date) >= sixMonthsAgo);
+            const lastGame = pitcher.games?.[pitcher.games.length - 1];
+            
+            // Season stats calculation
+            const totalPitches = recentGames.reduce((sum, g) => sum + (g.totalPitches || 0), 0);
+            const totalStrikes = recentGames.reduce((sum, g) => sum + (g.strikes || 0), 0);
+            const totalBalls = recentGames.reduce((sum, g) => sum + (g.balls || 0), 0);
+            const strikePercent = totalPitches > 0 ? Math.round((totalStrikes / totalPitches) * 100) : 0;
+            const ballPercent = totalPitches > 0 ? Math.round((totalBalls / totalPitches) * 100) : 0;
+            
+            const totalBattersFaced = recentGames.reduce((sum, g) => sum + (g.battersFaced || 0), 0);
+            const totalOuts = recentGames.reduce((sum, g) => sum + (g.outs || 0), 0);
+            const totalInnings = (Math.floor(totalOuts / 3) + ((totalOuts % 3) / 10)).toFixed(1);
+            
+            const totalBIP = recentGames.reduce((sum, g) => sum + (g.ballsInPlay || 0), 0);
+            const totalFPS = recentGames.reduce((sum, g) => sum + (g.firstPitchStrikes || 0), 0);
+            const totalAtBats = recentGames.reduce((sum, g) => sum + (g.atBats || 0), 0);
+            const fpsPercent = totalAtBats > 0 ? Math.round((totalFPS / totalAtBats) * 100) : 0;
+            
+            const totalThreeBall = recentGames.reduce((sum, g) => sum + (g.threeBallCounts || 0), 0);
+            const totalWalks = recentGames.reduce((sum, g) => sum + (g.walks || 0), 0);
+            const walkPercent = totalBattersFaced > 0 ? Math.round((totalWalks / totalBattersFaced) * 100) : 0;
+            
+            const totalSwinging = recentGames.reduce((sum, g) => sum + (g.swingingStrikes || 0), 0);
+            const totalCalled = recentGames.reduce((sum, g) => sum + (g.calledStrikes || 0), 0);
+            
+            const rhbPitches = recentGames.reduce((sum, g) => sum + (g.rhbPitches || 0), 0);
+            const rhbStrikes = recentGames.reduce((sum, g) => sum + (g.rhbStrikes || 0), 0);
+            const rhbPercent = rhbPitches > 0 ? Math.round((rhbStrikes / rhbPitches) * 100) : 0;
+            
+            const lhbPitches = recentGames.reduce((sum, g) => sum + (g.lhbPitches || 0), 0);
+            const lhbStrikes = recentGames.reduce((sum, g) => sum + (g.lhbStrikes || 0), 0);
+            const lhbPercent = lhbPitches > 0 ? Math.round((lhbStrikes / lhbPitches) * 100) : 0;
+            
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+                <div className="bg-white rounded-lg p-6 max-w-4xl w-full my-8">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold">📊 {pitcher.fullName} - Complete Stats</h2>
+                    <button onClick={() => setViewingPitcherStats(null)} className="text-gray-500 hover:text-gray-700">
+                      <X size={24} />
+                    </button>
+                  </div>
+                  
+                  {/* Last 6 Months Stats */}
+                  <div className="bg-blue-50 rounded-lg p-4 mb-6">
+                    <h3 className="text-xl font-bold mb-4 text-blue-900">Last 6 Months Summary ({recentGames.length} games)</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Total Pitches</p>
+                        <p className="text-2xl font-bold text-blue-600">{totalPitches}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Innings Pitched</p>
+                        <p className="text-2xl font-bold text-purple-600">{totalInnings}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Strike %</p>
+                        <p className="text-2xl font-bold text-green-600">{strikePercent}%</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Ball %</p>
+                        <p className="text-2xl font-bold text-red-600">{ballPercent}%</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Batters Faced</p>
+                        <p className="text-2xl font-bold text-gray-700">{totalBattersFaced}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">1st Pitch Strike %</p>
+                        <p className="text-2xl font-bold text-blue-600">{fpsPercent}%</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Walks</p>
+                        <p className="text-2xl font-bold text-orange-600">{totalWalks}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Walk %</p>
+                        <p className="text-2xl font-bold text-orange-600">{walkPercent}%</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">3-Ball Counts</p>
+                        <p className="text-2xl font-bold text-yellow-600">{totalThreeBall}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Balls in Play</p>
+                        <p className="text-2xl font-bold text-gray-600">{totalBIP}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">vs RHB</p>
+                        <p className="text-2xl font-bold text-blue-600">{rhbPercent}%</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">vs LHB</p>
+                        <p className="text-2xl font-bold text-purple-600">{lhbPercent}%</p>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-4 grid grid-cols-2 gap-4">
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Swinging Strikes</p>
+                        <p className="text-xl font-bold text-green-600">{totalSwinging}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow-sm">
+                        <p className="text-xs text-gray-600">Called Strikes</p>
+                        <p className="text-xl font-bold text-blue-600">{totalCalled}</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Last Outing */}
+                  {lastGame && (
+                    <div className="bg-green-50 rounded-lg p-4">
+                      <h3 className="text-xl font-bold mb-4 text-green-900">Last Outing ({new Date(lastGame.date).toLocaleDateString()})</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Pitches</p>
+                          <p className="text-xl font-bold text-blue-600">{lastGame.totalPitches}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Innings</p>
+                          <p className="text-xl font-bold text-purple-600">{lastGame.innings}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Strike %</p>
+                          <p className="text-xl font-bold text-green-600">{lastGame.strikePercent}%</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Ball %</p>
+                          <p className="text-xl font-bold text-red-600">{lastGame.ballPercent || 0}%</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Batters Faced</p>
+                          <p className="text-xl font-bold text-gray-700">{lastGame.battersFaced}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Outs</p>
+                          <p className="text-xl font-bold text-gray-700">{lastGame.outs}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Walks</p>
+                          <p className="text-xl font-bold text-orange-600">{lastGame.walks || 0}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Walk %</p>
+                          <p className="text-xl font-bold text-orange-600">{lastGame.walkPercent || 0}%</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">1st Pitch Strikes</p>
+                          <p className="text-xl font-bold text-blue-600">{lastGame.firstPitchStrikes || 0}/{lastGame.atBats || 0}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">3-Ball Counts</p>
+                          <p className="text-xl font-bold text-yellow-600">{lastGame.threeBallCounts || 0}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Swinging Strikes</p>
+                          <p className="text-xl font-bold text-green-600">{lastGame.swingingStrikes || 0}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm">
+                          <p className="text-xs text-gray-600">Called Strikes</p>
+                          <p className="text-xl font-bold text-blue-600">{lastGame.calledStrikes || 0}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={() => setViewingPitcherStats(null)}
+                    className="w-full mt-6 bg-gray-600 text-white px-4 py-3 rounded-lg hover:bg-gray-700 font-semibold"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Edit Pitcher Modal */}
           {editingPitcher && (
@@ -1628,6 +1826,7 @@ export default function PitchTracker() {
     const [pendingStrikeConfirm, setPendingStrikeConfirm] = React.useState(false);
     const [pendingOutConfirm, setPendingOutConfirm] = React.useState(false);
     const [pendingStrikeoutConfirm, setPendingStrikeoutConfirm] = React.useState(null); // { outs, balls, strikes, etc. }
+    const [pendingExtraInningsCheck, setPendingExtraInningsCheck] = React.useState(false);
     
     // Check if a game is currently in progress
     const gameInProgress = gameState && gameState.selectedPitcher && gameState.pitches && gameState.pitches.length > 0;
@@ -2312,7 +2511,22 @@ export default function PitchTracker() {
             <button onClick={() => recordPitch('ball')} className="bg-red-500 text-white py-3 rounded-lg font-bold text-base hover:bg-red-600">BALL</button>
             <button onClick={() => setPendingStrikeConfirm(true)} className="bg-green-500 text-white py-3 rounded-lg font-bold text-base hover:bg-green-600">STRIKE</button>
             <button onClick={() => recordPitch('ballInPlay')} className="bg-blue-500 text-white py-3 rounded-lg font-bold text-base hover:bg-blue-600">BATTER REACHED SAFELY</button>
-            <button onClick={() => setPendingOutConfirm(true)} className="bg-purple-500 text-white py-3 rounded-lg font-bold text-base hover:bg-purple-600">OUT</button>
+            <button onClick={() => {
+              // Check if this is start of inning with no one on base
+              // battersFaced for THIS PITCHER could be 0, but someone from previous pitcher could be on base
+              // Better check: has anyone reached base this inning?
+              const noOneOnBase = gameState.ballsInPlay === 0;
+              const startOfInning = gameState.battersFaced === 0;
+              
+              if (noOneOnBase && startOfInning) {
+                // Can't have a pickoff/thrown out if no one is on base
+                // Unless it's extra innings with runner on 2nd rule
+                setPendingExtraInningsCheck(true);
+              } else {
+                // Normal scenario - show out type dialog
+                setPendingOutConfirm(true);
+              }
+            }} className="bg-purple-500 text-white py-3 rounded-lg font-bold text-base hover:bg-purple-600">OUT</button>
           </div>
 
           <div className="grid grid-cols-2 gap-2 mb-3">
@@ -2420,6 +2634,43 @@ export default function PitchTracker() {
                     className="w-full bg-yellow-500 text-white py-3 px-4 rounded-lg font-semibold hover:bg-yellow-600 transition"
                   >
                     ↶ Cancel & Undo Last Pitch
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Extra Innings Runner Rule Check Dialog */}
+          {pendingExtraInningsCheck && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+                <h3 className="text-2xl font-bold mb-2 text-center text-gray-800">⚾ Extra Innings?</h3>
+                <p className="text-center text-gray-600 mb-6">
+                  No batters have reached base yet this inning. Is the extra innings runner rule in effect?
+                </p>
+                
+                <div className="space-y-3">
+                  <button
+                    onClick={() => {
+                      setPendingExtraInningsCheck(false);
+                      setPendingOutConfirm(true); // Allow the out
+                    }}
+                    className="w-full bg-blue-500 text-white py-4 px-4 rounded-lg font-bold text-lg hover:bg-blue-600 transition"
+                  >
+                    ✅ Yes - Runner on 2nd
+                    <span className="block text-sm font-normal mt-1">(Extra innings rule - allow out)</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      setPendingExtraInningsCheck(false);
+                      // Don't show out dialog - user needs to select batter handedness first
+                      alert('Please select batter handedness first. A batter must reach base before a runner can be thrown out.');
+                    }}
+                    className="w-full bg-red-500 text-white py-4 px-4 rounded-lg font-bold text-lg hover:bg-red-600 transition"
+                  >
+                    ❌ No - Regular Inning
+                    <span className="block text-sm font-normal mt-1">(Must select batter first)</span>
                   </button>
                 </div>
               </div>
@@ -3590,7 +3841,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.0.6 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.0.8 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
