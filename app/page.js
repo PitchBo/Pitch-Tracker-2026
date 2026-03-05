@@ -2850,6 +2850,95 @@ export default function PitchTracker() {
 
           <button
             onClick={() => {
+              // Save current pitcher's stats if they haven't ended outing
+              if (gameState?.selectedPitcher && gameState?.pitches?.length > 0) {
+                const currentPitcher = allPitchers.find(p => p.id === gameState.selectedPitcher);
+                if (currentPitcher) {
+                  const pitches = gameState.pitches || [];
+                  const totalPitches = pitches.length;
+                  const totalStrikes = pitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
+                  const totalBalls = pitches.filter(p => p.outcome === 'ball').length;
+                  const strikePercent = totalPitches > 0 ? Math.round((totalStrikes / totalPitches) * 100) : 0;
+                  const ballPercent = totalPitches > 0 ? Math.round((totalBalls / totalPitches) * 100) : 0;
+                  
+                  const swingingStrikes = pitches.filter(p => 
+                    (p.outcome === 'strike' && p.strikeType === 'swinging') || 
+                    (p.outcome === 'foul')
+                  ).length;
+                  
+                  const calledStrikes = pitches.filter(p => 
+                    p.outcome === 'strike' && p.strikeType === 'called'
+                  ).length;
+                  
+                  const lhbPitches = pitches.filter(p => p.batterHand === 'L');
+                  const lhbStrikes = lhbPitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
+                  const rhbPitches = pitches.filter(p => p.batterHand === 'R');
+                  const rhbStrikes = rhbPitches.filter(p => ['strike', 'ballInPlay', 'out', 'foul'].includes(p.outcome)).length;
+                  
+                  const fullInnings = Math.floor(gameState.outs / 3);
+                  const partialOuts = gameState.outs % 3;
+                  let innings;
+                  if (partialOuts === 0) {
+                    innings = fullInnings.toString();
+                  } else if (partialOuts === 1) {
+                    innings = fullInnings + '+';
+                  } else {
+                    innings = fullInnings + '++';
+                  }
+                  
+                  const { pitchesToday, pitchesYesterday } = getTodaysPitchesAndRest(currentPitcher, currentTeam.organization);
+                  const { remaining: pitchesUntilRest } = getPitchesUntilNextThreshold(
+                    totalPitches, 
+                    pitchesYesterday, 
+                    currentPitcher.age, 
+                    currentTeam.organization
+                  );
+                  
+                  let mandatoryRestDays = 0;
+                  if (pitchesYesterday > 0) {
+                    const totalTwoDays = pitchesYesterday + totalPitches;
+                    mandatoryRestDays = getRequiredRestDays(totalTwoDays, currentPitcher.age, currentTeam.organization);
+                    mandatoryRestDays = Math.max(mandatoryRestDays, 1);
+                  } else {
+                    mandatoryRestDays = getRequiredRestDays(totalPitches, currentPitcher.age, currentTeam.organization);
+                  }
+                  
+                  const gameData = {
+                    date: new Date().toISOString(),
+                    teamId: currentTeam.id,
+                    totalPitches,
+                    innings,
+                    outs: gameState.outs || 0,
+                    strikePercent,
+                    ballPercent,
+                    battersFaced: gameState.battersFaced || 0,
+                    strikes: totalStrikes,
+                    balls: totalBalls,
+                    swingingStrikes,
+                    calledStrikes,
+                    lhbPitches: lhbPitches.length,
+                    lhbStrikes,
+                    rhbPitches: rhbPitches.length,
+                    rhbStrikes,
+                    ballsInPlay: gameState.ballsInPlay || 0,
+                    firstPitchStrikes: gameState.firstPitchStrikes || 0,
+                    threeBallCounts: gameState.threeBallCounts || 0,
+                    walks: gameState.walks || 0,
+                    walkPercent: gameState.battersFaced > 0 ? Math.round(((gameState.walks || 0) / gameState.battersFaced) * 100) : 0,
+                    pitchesUntilRest,
+                    mandatoryRestDays
+                  };
+                  
+                  const updatedPitcher = {
+                    ...currentPitcher,
+                    games: [...(currentPitcher.games || []), gameData],
+                    availableToday: currentPitcher.availableToday - totalPitches
+                  };
+                  
+                  setAllPitchers(allPitchers.map(p => p.id === currentPitcher.id ? updatedPitcher : p));
+                }
+              }
+              
               setGameState(null);
               setCurrentView('dashboard');
             }}
@@ -3501,7 +3590,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.0.3 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.0.6 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
