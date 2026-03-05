@@ -1185,8 +1185,8 @@ export default function PitchTracker() {
                           <p className="text-xl font-bold text-gray-700">{lastGame.battersFaced}</p>
                         </div>
                         <div className="bg-white p-3 rounded shadow-sm">
-                          <p className="text-xs text-gray-600">Outs</p>
-                          <p className="text-xl font-bold text-gray-700">{lastGame.outs}</p>
+                          <p className="text-xs text-gray-600">Balls in Play</p>
+                          <p className="text-xl font-bold text-gray-700">{lastGame.ballsInPlay || 0}</p>
                         </div>
                         <div className="bg-white p-3 rounded shadow-sm">
                           <p className="text-xs text-gray-600">Walks</p>
@@ -1198,7 +1198,7 @@ export default function PitchTracker() {
                         </div>
                         <div className="bg-white p-3 rounded shadow-sm">
                           <p className="text-xs text-gray-600">1st Pitch Strikes</p>
-                          <p className="text-xl font-bold text-blue-600">{lastGame.firstPitchStrikes || 0}/{lastGame.atBats || 0}</p>
+                          <p className="text-xl font-bold text-blue-600">{lastGame.firstPitchStrikes || 0}/{lastGame.battersFaced || 0}</p>
                         </div>
                         <div className="bg-white p-3 rounded shadow-sm">
                           <p className="text-xs text-gray-600">3-Ball Counts</p>
@@ -1995,7 +1995,7 @@ export default function PitchTracker() {
           setGameState({
             ...gameState,
             inning: gameState.inning + 1,
-            outs: newOuts,
+            outs: 0, // Reset outs for new inning
             battersFaced: newBattersFaced,
             atBats: newAtBats,
             runnersOnBase: 0, // Clear bases at end of inning
@@ -2137,7 +2137,7 @@ export default function PitchTracker() {
             ...gameState,
             inning: gameState.inning + 1,
             pitches: updatedPitches,
-            outs: newOuts,
+            outs: 0, // Reset outs for new inning
             battersFaced: newBattersFaced,
             ballsInPlay: newBallsInPlay,
             firstPitchStrikes: newFirstPitchStrikes,
@@ -2418,7 +2418,7 @@ export default function PitchTracker() {
             ...gameState,
             inning: gameState.inning + 1,
             pitches: updatedPitches,
-            outs: newOuts,
+            outs: 0, // Reset outs for new inning
             battersFaced: newBattersFaced,
             ballsInPlay: ballsInPlay,
             firstPitchStrikes: newFirstPitchStrikes,
@@ -4074,7 +4074,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.5 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.7 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
