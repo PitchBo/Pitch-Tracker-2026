@@ -2610,7 +2610,12 @@ export default function PitchTracker() {
             <button onClick={undoLastPitch} className="bg-yellow-500 text-white py-2 rounded-lg font-semibold text-sm hover:bg-yellow-600">↶ UNDO</button>
             <button 
               onClick={() => {
-                const maxRuns = Math.min(4, (gameState.runnersOnBase || 0) + 1);
+                const runners = gameState.runnersOnBase || 0;
+                if (runners === 0) {
+                  alert('No runners on base! Runs can only score when runners are on base or a batter reaches safely.');
+                  return;
+                }
+                const maxRuns = Math.min(4, runners);
                 setPendingRunsScored({ type: 'manual', maxRuns, pendingOutcome: null });
               }}
               className="bg-green-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-green-700"
@@ -2783,7 +2788,11 @@ export default function PitchTracker() {
           {pendingRunsScored && (() => {
             const maxRuns = pendingRunsScored.maxRuns || 4;
             const runners = gameState.runnersOnBase || 0;
-            const actualMax = Math.min(maxRuns, runners + 1); // Can't score more than runners + batter
+            // For manual entry, can only score runners already on base
+            // For reachedSafely, can score runners + batter
+            const actualMax = pendingRunsScored.type === 'manual' 
+              ? Math.min(maxRuns, runners) 
+              : Math.min(maxRuns, runners + 1);
             
             return (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -4007,7 +4016,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.0 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.1 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
