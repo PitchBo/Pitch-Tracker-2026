@@ -1859,10 +1859,12 @@ export default function PitchTracker() {
                   <div
                     key={pitcher.id}
                     onClick={() => {
-                      // Preserve outs if mid-inning (outs > 0 and not at 3, 6, 9, etc.)
-                      const midInning = gameState && gameState.outs > 0 && gameState.outs % 3 !== 0;
-                      const preserveOuts = midInning ? gameState.outs : 0;
-                      const preserveInning = midInning ? gameState.inning : 1;
+                      // Preserve game state if continuing from previous pitcher
+                      const continuingGame = gameState && gameState.inning > 0;
+                      const preserveOuts = continuingGame ? gameState.outs : 0;
+                      const preserveInning = continuingGame ? gameState.inning : 1;
+                      const preserveRunners = continuingGame ? (gameState.runnersOnBase || 0) : 0;
+                      const preserveRuns = continuingGame ? (gameState.runsScored || 0) : 0;
                       
                       setGameState({
                         ...gameState,
@@ -1871,16 +1873,16 @@ export default function PitchTracker() {
                         batterHand: null,
                         balls: 0,
                         strikes: 0,
-                        outs: preserveOuts, // Preserve outs if mid-inning
-                        inning: preserveInning, // Preserve inning too
+                        outs: preserveOuts, // Preserve outs from previous pitcher
+                        inning: preserveInning, // Preserve inning from previous pitcher
                         battersFaced: 0,
                         ballsInPlay: 0,
                         firstPitchStrikes: 0,
                         atBats: 0,
                         threeBallCounts: 0,
                         walks: 0,
-                        runnersOnBase: midInning && gameState?.runnersOnBase ? gameState.runnersOnBase : 0, // Preserve runners if mid-inning
-                        runsScored: midInning && gameState?.runsScored ? gameState.runsScored : 0, // Preserve runs if mid-inning
+                        runnersOnBase: preserveRunners, // Preserve runners from previous pitcher
+                        runsScored: preserveRuns, // Preserve runs from previous pitcher
                         currentAtBatFirstPitchStrike: false
                       });
                     }}
@@ -2533,6 +2535,7 @@ export default function PitchTracker() {
 
       setAllPitchers(allPitchers.map(p => p.id === pitcher.id ? updatedPitcher : p));
       
+      // Preserve game state for next pitcher
       setGameState({
         ...gameState,
         selectedPitcher: null,
@@ -2540,13 +2543,17 @@ export default function PitchTracker() {
         batterHand: null,
         balls: 0,
         strikes: 0,
-        outs: 0,
-        battersFaced: 0,
-        ballsInPlay: 0,
-        firstPitchStrikes: 0,
-        atBats: 0,
-        threeBallCounts: 0,
-        walks: 0,
+        // PRESERVE these for next pitcher:
+        // inning: gameState.inning (already preserved by spreading gameState)
+        // outs: gameState.outs (already preserved by spreading gameState)
+        // runnersOnBase: gameState.runnersOnBase (already preserved by spreading gameState)
+        // runsScored: gameState.runsScored (already preserved by spreading gameState)
+        battersFaced: 0, // Reset for new pitcher
+        ballsInPlay: 0, // Reset for new pitcher
+        firstPitchStrikes: 0, // Reset for new pitcher
+        atBats: 0, // Reset for new pitcher
+        threeBallCounts: 0, // Reset for new pitcher
+        walks: 0, // Reset for new pitcher
         currentAtBatFirstPitchStrike: false,
         pitchers: [...(gameState.pitchers || []), { pitcher: updatedPitcher, gameData }]
       });
@@ -4074,7 +4081,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.7 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.1.8 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
