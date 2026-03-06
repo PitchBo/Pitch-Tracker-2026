@@ -652,14 +652,20 @@ export default function PitchTracker() {
     };
 
     const deletePitcherStats = (pitcherId) => {
-      if (window.confirm('Delete all stats for this pitcher? This will remove all game and training data but keep the pitcher information (name, birthday, phone, pitch arsenal).')) {
-        const pitcher = allPitchers.find(p => p.id === pitcherId);
-        if (!pitcher) return;
-        
+      const pitcher = allPitchers.find(p => p.id === pitcherId);
+      if (!pitcher) {
+        alert('Pitcher not found!');
+        return;
+      }
+      
+      const statsCount = (pitcher.games?.length || 0) + (pitcher.trainingSessions?.length || 0);
+      
+      if (window.confirm(`Delete all stats for ${pitcher.fullName}?\n\nThis will remove:\n- ${pitcher.games?.length || 0} game(s)\n- ${pitcher.trainingSessions?.length || 0} training session(s)\n\nPitcher information (name, birthday, arsenal) will be kept.`)) {
         const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcherId));
         const maxPitches = pitcherTeam ? calculateMaxPitches(pitcher.age, pitcherTeam.organization) : 85;
         
-        setAllPitchers(allPitchers.map(p => 
+        // Use functional update to ensure we have latest state
+        setAllPitchers(currentPitchers => currentPitchers.map(p => 
           p.id === pitcherId 
             ? { 
                 ...p, 
@@ -670,7 +676,9 @@ export default function PitchTracker() {
             : p
         ));
         
-        alert('Stats deleted successfully! The pitcher information has been kept.');
+        setTimeout(() => {
+          alert(`✅ Stats deleted for ${pitcher.fullName}!\n\n${statsCount} record(s) removed.\nAvailable pitches reset to ${maxPitches}.`);
+        }, 100);
       }
     };
 
@@ -1092,9 +1100,9 @@ export default function PitchTracker() {
             const lhbPercent = lhbPitches > 0 ? Math.round((lhbStrikes / lhbPitches) * 100) : 0;
             
             return (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center p-4 z-50 overflow-y-auto">
                 <div className="bg-white rounded-lg p-6 max-w-4xl w-full my-8">
-                  <div className="flex justify-between items-center mb-6">
+                  <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-4 border-b">
                     <h2 className="text-2xl font-bold">📊 {pitcher.fullName} - Complete Stats</h2>
                     <button onClick={() => setViewingPitcherStats(null)} className="text-gray-500 hover:text-gray-700">
                       <X size={24} />
@@ -4089,7 +4097,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.1.9 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.0 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
