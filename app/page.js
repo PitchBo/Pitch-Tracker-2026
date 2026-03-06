@@ -1926,7 +1926,7 @@ export default function PitchTracker() {
                     onClick={() => {
                       // Preserve game state if continuing from previous pitcher
                       const continuingGame = gameState && gameState.inning > 0;
-                      const preserveOuts = continuingGame ? gameState.outs : 0;
+                      const preserveOuts = continuingGame ? (gameState.outs || 0) : 0;
                       const preserveInning = continuingGame ? gameState.inning : 1;
                       const preserveRunners = continuingGame ? (gameState.runnersOnBase || 0) : 0;
                       const preserveRuns = continuingGame ? (gameState.runsScored || 0) : 0;
@@ -2639,7 +2639,7 @@ export default function PitchTracker() {
               </div>
               <div>
                 <p className="text-xs text-gray-600">Outs</p>
-                <p className="text-2xl font-bold text-blue-900">{gameState.outs % 3}</p>
+                <p className="text-2xl font-bold text-blue-900">{(gameState.outs || 0) % 3}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-600">Count</p>
@@ -4146,7 +4146,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.2.4 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.5 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
