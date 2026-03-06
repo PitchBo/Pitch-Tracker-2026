@@ -667,8 +667,12 @@ export default function PitchTracker() {
       
       if (window.confirm(`Delete all stats for ${pitcher.fullName}?\n\nThis will remove:\n- ${pitcher.games?.length || 0} game(s)\n- ${pitcher.trainingSessions?.length || 0} training session(s)\n\nPitcher information (name, birthday, arsenal) will be kept.`)) {
         try {
+          console.log('🗑️ Starting delete for pitcher:', pitcherId);
+          
           const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcherId));
           const maxPitches = pitcherTeam ? calculateMaxPitches(pitcher.age, pitcherTeam.organization) : 85;
+          
+          console.log('Calculated maxPitches:', maxPitches);
           
           // Create completely new array with updated pitcher
           const updatedPitchers = allPitchers.map(p => {
@@ -692,22 +696,37 @@ export default function PitchTracker() {
           console.log('🗑️ Deleting stats for:', pitcher.fullName);
           console.log('Before:', pitcher.games?.length || 0, 'games,', pitcher.trainingSessions?.length || 0, 'training');
           console.log('After:', 0, 'games,', 0, 'training');
+          console.log('Updated pitchers array length:', updatedPitchers.length);
           
           // Update state
+          console.log('Updating state...');
           setAllPitchers(updatedPitchers);
+          console.log('State updated');
           
           // Force save to storage immediately
+          console.log('Storage ready:', storageReady);
           if (storageReady) {
+            console.log('Importing storage module...');
             const storageModule = await import('./storage');
+            console.log('Storage module imported:', storageModule);
             const storage = storageModule.default;
+            console.log('Got storage instance:', storage);
+            console.log('Calling saveAll...');
             await storage.saveAll('pitchers', updatedPitchers);
             console.log('✅ Stats deletion saved to storage');
+          } else {
+            console.warn('⚠️ Storage not ready, changes may not persist');
           }
           
           alert(`✅ Stats deleted for ${pitcher.fullName}!\n\n${statsCount} record(s) removed.\nAvailable pitches reset to ${maxPitches}.\n\nRefresh the page if stats still appear.`);
         } catch (error) {
           console.error('❌ Error deleting stats:', error);
-          alert('Error deleting stats. Please try again or contact support.');
+          console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          });
+          alert(`Error deleting stats: ${error.message}\n\nPlease check console for details.`);
         }
       }
     };
@@ -4127,7 +4146,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.2.2 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.3 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
