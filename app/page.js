@@ -670,7 +670,7 @@ export default function PitchTracker() {
           console.log('🗑️ Starting delete for pitcher:', pitcherId);
           
           const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcherId));
-          const maxPitches = pitcherTeam ? calculateMaxPitches(pitcher.age, pitcherTeam.organization) : 85;
+          const maxPitches = calculateAvailablePitches(pitcher, pitcherTeam?.organization);
           
           console.log('Calculated maxPitches:', maxPitches);
           
@@ -4146,7 +4146,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.2.3 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.4 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
