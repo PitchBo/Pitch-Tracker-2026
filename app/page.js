@@ -660,21 +660,39 @@ export default function PitchTracker() {
       
       const statsCount = (pitcher.games?.length || 0) + (pitcher.trainingSessions?.length || 0);
       
+      if (statsCount === 0) {
+        alert('This pitcher has no stats to delete.');
+        return;
+      }
+      
       if (window.confirm(`Delete all stats for ${pitcher.fullName}?\n\nThis will remove:\n- ${pitcher.games?.length || 0} game(s)\n- ${pitcher.trainingSessions?.length || 0} training session(s)\n\nPitcher information (name, birthday, arsenal) will be kept.`)) {
         const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcherId));
         const maxPitches = pitcherTeam ? calculateMaxPitches(pitcher.age, pitcherTeam.organization) : 85;
         
-        // Use functional update to ensure we have latest state
-        setAllPitchers(currentPitchers => currentPitchers.map(p => 
-          p.id === pitcherId 
-            ? { 
-                ...p, 
-                games: [], 
-                trainingSessions: [],
-                availableToday: maxPitches
-              }
-            : p
-        ));
+        // Create completely new array with updated pitcher
+        const updatedPitchers = allPitchers.map(p => {
+          if (p.id === pitcherId) {
+            // Create new pitcher object with cleared stats
+            return {
+              id: p.id,
+              fullName: p.fullName,
+              birthday: p.birthday,
+              age: p.age,
+              phoneNumber: p.phoneNumber,
+              pitchArsenal: p.pitchArsenal,
+              games: [],
+              trainingSessions: [],
+              availableToday: maxPitches
+            };
+          }
+          return p;
+        });
+        
+        console.log('Deleting stats for pitcher:', pitcherId);
+        console.log('Before:', pitcher.games?.length, 'games');
+        console.log('After:', updatedPitchers.find(p => p.id === pitcherId).games.length, 'games');
+        
+        setAllPitchers(updatedPitchers);
         
         setTimeout(() => {
           alert(`✅ Stats deleted for ${pitcher.fullName}!\n\n${statsCount} record(s) removed.\nAvailable pitches reset to ${maxPitches}.`);
@@ -4097,7 +4115,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.2.0 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.1 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
