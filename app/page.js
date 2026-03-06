@@ -1930,14 +1930,17 @@ export default function PitchTracker() {
                       const preserveInning = continuingGame ? gameState.inning : 1;
                       const preserveRunners = continuingGame ? (gameState.runnersOnBase || 0) : 0;
                       const preserveRuns = continuingGame ? (gameState.runsScored || 0) : 0;
+                      const preserveBalls = continuingGame ? (gameState.balls || 0) : 0;
+                      const preserveStrikes = continuingGame ? (gameState.strikes || 0) : 0;
+                      const preserveBatterHand = continuingGame ? gameState.batterHand : null;
                       
                       setGameState({
                         ...gameState,
                         selectedPitcher: pitcher.id,
                         pitches: [],
-                        batterHand: null,
-                        balls: 0,
-                        strikes: 0,
+                        batterHand: preserveBatterHand, // Preserve batter handedness
+                        balls: preserveBalls, // Preserve count
+                        strikes: preserveStrikes, // Preserve count
                         outs: preserveOuts, // Preserve outs from previous pitcher
                         inning: preserveInning, // Preserve inning from previous pitcher
                         battersFaced: 0,
@@ -3127,17 +3130,26 @@ export default function PitchTracker() {
       }
     }
     
-    const teamTotals = allGamePitchers.reduce((acc, p) => ({
-      totalPitches: acc.totalPitches + p.gameData.totalPitches,
-      strikes: acc.strikes + p.gameData.strikes,
-      balls: acc.balls + (p.gameData.balls || 0),
-      battersFaced: acc.battersFaced + p.gameData.battersFaced,
-      outs: acc.outs + (p.gameData.outs || 0),
-      rhbPitches: acc.rhbPitches + p.gameData.rhbPitches,
-      rhbStrikes: acc.rhbStrikes + p.gameData.rhbStrikes,
-      lhbPitches: acc.lhbPitches + p.gameData.lhbPitches,
-      lhbStrikes: acc.lhbStrikes + p.gameData.lhbStrikes
-    }), { totalPitches: 0, strikes: 0, balls: 0, battersFaced: 0, outs: 0, rhbPitches: 0, rhbStrikes: 0, lhbPitches: 0, lhbStrikes: 0 });
+    const teamTotals = allGamePitchers.reduce((acc, p) => {
+      // Calculate outs from innings (e.g., "3.1" = 10 outs, "2" = 6 outs)
+      const inningsStr = p.gameData.innings || "0";
+      const inningsParts = inningsStr.split('.');
+      const fullInnings = parseInt(inningsParts[0]) || 0;
+      const extraOuts = inningsParts[1] ? parseInt(inningsParts[1]) || 0 : 0;
+      const outsRecorded = (fullInnings * 3) + extraOuts;
+      
+      return {
+        totalPitches: acc.totalPitches + p.gameData.totalPitches,
+        strikes: acc.strikes + p.gameData.strikes,
+        balls: acc.balls + (p.gameData.balls || 0),
+        battersFaced: acc.battersFaced + p.gameData.battersFaced,
+        outs: acc.outs + outsRecorded, // Use calculated outs from innings
+        rhbPitches: acc.rhbPitches + p.gameData.rhbPitches,
+        rhbStrikes: acc.rhbStrikes + p.gameData.rhbStrikes,
+        lhbPitches: acc.lhbPitches + p.gameData.lhbPitches,
+        lhbStrikes: acc.lhbStrikes + p.gameData.lhbStrikes
+      };
+    }, { totalPitches: 0, strikes: 0, balls: 0, battersFaced: 0, outs: 0, rhbPitches: 0, rhbStrikes: 0, lhbPitches: 0, lhbStrikes: 0 });
 
     const teamStrikePercent = teamTotals.totalPitches > 0 ? Math.round((teamTotals.strikes / teamTotals.totalPitches) * 100) : 0;
     const teamBallPercent = teamTotals.totalPitches > 0 ? Math.round((teamTotals.balls / teamTotals.totalPitches) * 100) : 0;
@@ -3175,7 +3187,7 @@ export default function PitchTracker() {
         unavailableToday.forEach(p => {
           const lastGame = p.games?.[p.games.length - 1];
           const pitchCount = lastGame?.totalPitches || 0;
-          const restDays = getRequiredRestDays(pitchCount, p.age, currentTeam.organization);
+          const restDays = lastGame?.mandatoryRestDays || 0; // Use saved mandatoryRestDays
           const nextAvailable = new Date();
           nextAvailable.setDate(nextAvailable.getDate() + restDays);
           report += `• ${p.fullName}\n  Last outing: ${pitchCount} pitches\n  Rest required: ${restDays} days\n  Next available: ${nextAvailable.toLocaleDateString()}\n\n`;
@@ -3300,7 +3312,7 @@ export default function PitchTracker() {
                   {unavailableToday.map(p => {
                     const lastGame = p.games?.[p.games.length - 1];
                     const pitchCount = lastGame?.totalPitches || 0;
-                    const restDays = getRequiredRestDays(pitchCount, p.age, currentTeam.organization);
+                    const restDays = lastGame?.mandatoryRestDays || 0; // Use saved mandatoryRestDays from game
                     const nextAvailable = new Date();
                     nextAvailable.setDate(nextAvailable.getDate() + restDays);
                     
@@ -3360,7 +3372,7 @@ export default function PitchTracker() {
                   unavailableToday.forEach(p => {
                     const lastGame = p.games?.[p.games.length - 1];
                     const pitchCount = lastGame?.totalPitches || 0;
-                    const restDays = pitchCount >= 51 ? 3 : pitchCount >= 36 ? 2 : 1;
+                    const restDays = lastGame?.mandatoryRestDays || 0; // Use saved mandatoryRestDays
                     const nextAvailable = new Date();
                     nextAvailable.setDate(nextAvailable.getDate() + restDays);
                     report += `• ${p.fullName}\n  Last outing: ${pitchCount} pitches\n  Rest required: ${restDays} days\n  Next available: ${nextAvailable.toLocaleDateString()}\n\n`;
@@ -4146,7 +4158,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.2.5 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.6 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
