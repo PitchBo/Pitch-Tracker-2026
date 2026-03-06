@@ -651,7 +651,7 @@ export default function PitchTracker() {
       }
     };
 
-    const deletePitcherStats = (pitcherId) => {
+    const deletePitcherStats = async (pitcherId) => {
       const pitcher = allPitchers.find(p => p.id === pitcherId);
       if (!pitcher) {
         alert('Pitcher not found!');
@@ -666,37 +666,49 @@ export default function PitchTracker() {
       }
       
       if (window.confirm(`Delete all stats for ${pitcher.fullName}?\n\nThis will remove:\n- ${pitcher.games?.length || 0} game(s)\n- ${pitcher.trainingSessions?.length || 0} training session(s)\n\nPitcher information (name, birthday, arsenal) will be kept.`)) {
-        const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcherId));
-        const maxPitches = pitcherTeam ? calculateMaxPitches(pitcher.age, pitcherTeam.organization) : 85;
-        
-        // Create completely new array with updated pitcher
-        const updatedPitchers = allPitchers.map(p => {
-          if (p.id === pitcherId) {
-            // Create new pitcher object with cleared stats
-            return {
-              id: p.id,
-              fullName: p.fullName,
-              birthday: p.birthday,
-              age: p.age,
-              phoneNumber: p.phoneNumber,
-              pitchArsenal: p.pitchArsenal,
-              games: [],
-              trainingSessions: [],
-              availableToday: maxPitches
-            };
+        try {
+          const pitcherTeam = teams.find(t => t.pitcherIds.includes(pitcherId));
+          const maxPitches = pitcherTeam ? calculateMaxPitches(pitcher.age, pitcherTeam.organization) : 85;
+          
+          // Create completely new array with updated pitcher
+          const updatedPitchers = allPitchers.map(p => {
+            if (p.id === pitcherId) {
+              // Create new pitcher object with cleared stats
+              return {
+                id: p.id,
+                fullName: p.fullName,
+                birthday: p.birthday,
+                age: p.age,
+                phoneNumber: p.phoneNumber,
+                pitchArsenal: p.pitchArsenal || [],
+                games: [],
+                trainingSessions: [],
+                availableToday: maxPitches
+              };
+            }
+            return p;
+          });
+          
+          console.log('🗑️ Deleting stats for:', pitcher.fullName);
+          console.log('Before:', pitcher.games?.length || 0, 'games,', pitcher.trainingSessions?.length || 0, 'training');
+          console.log('After:', 0, 'games,', 0, 'training');
+          
+          // Update state
+          setAllPitchers(updatedPitchers);
+          
+          // Force save to storage immediately
+          if (storageReady) {
+            const storageModule = await import('./storage');
+            const storage = storageModule.default;
+            await storage.saveAll('pitchers', updatedPitchers);
+            console.log('✅ Stats deletion saved to storage');
           }
-          return p;
-        });
-        
-        console.log('Deleting stats for pitcher:', pitcherId);
-        console.log('Before:', pitcher.games?.length, 'games');
-        console.log('After:', updatedPitchers.find(p => p.id === pitcherId).games.length, 'games');
-        
-        setAllPitchers(updatedPitchers);
-        
-        setTimeout(() => {
-          alert(`✅ Stats deleted for ${pitcher.fullName}!\n\n${statsCount} record(s) removed.\nAvailable pitches reset to ${maxPitches}.`);
-        }, 100);
+          
+          alert(`✅ Stats deleted for ${pitcher.fullName}!\n\n${statsCount} record(s) removed.\nAvailable pitches reset to ${maxPitches}.\n\nRefresh the page if stats still appear.`);
+        } catch (error) {
+          console.error('❌ Error deleting stats:', error);
+          alert('Error deleting stats. Please try again or contact support.');
+        }
       }
     };
 
@@ -4115,7 +4127,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.2.1 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.2 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
