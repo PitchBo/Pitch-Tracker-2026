@@ -2525,9 +2525,15 @@ export default function PitchTracker() {
     };
 
     const endOuting = () => {
+      // Safety check
+      if (!pitcher) {
+        alert('Error: Pitcher data not found. Cannot end outing.');
+        return;
+      }
+      
       // Calculate innings in baseball notation: full innings + partial
-      const fullInnings = Math.floor(gameState.outs / 3);
-      const partialOuts = gameState.outs % 3;
+      const fullInnings = Math.floor((gameState.outs || 0) / 3);
+      const partialOuts = (gameState.outs || 0) % 3;
       let innings;
       
       if (partialOuts === 0) {
@@ -2598,7 +2604,7 @@ export default function PitchTracker() {
       const updatedPitcher = {
         ...pitcher,
         games: [...(pitcher.games || []), gameData],
-        availableToday: pitcher.availableToday - totalPitches
+        availableToday: (pitcher.availableToday || 0) - totalPitches
       };
 
       setAllPitchers(allPitchers.map(p => p.id === pitcher.id ? updatedPitcher : p));
@@ -3131,23 +3137,37 @@ export default function PitchTracker() {
     }
     
     const teamTotals = allGamePitchers.reduce((acc, p) => {
-      // Calculate outs from innings (e.g., "3.1" = 10 outs, "2" = 6 outs)
+      // Calculate outs from innings (e.g., "3" = 9 outs, "3+" = 10 outs, "3++" = 11 outs)
       const inningsStr = p.gameData.innings || "0";
-      const inningsParts = inningsStr.split('.');
-      const fullInnings = parseInt(inningsParts[0]) || 0;
-      const extraOuts = inningsParts[1] ? parseInt(inningsParts[1]) || 0 : 0;
+      let fullInnings = 0;
+      let extraOuts = 0;
+      
+      if (inningsStr.includes('+')) {
+        // Count the + signs for extra outs
+        fullInnings = parseInt(inningsStr.replace(/\+/g, '')) || 0;
+        extraOuts = (inningsStr.match(/\+/g) || []).length;
+      } else if (inningsStr.includes('.')) {
+        // Decimal notation like "3.1"
+        const parts = inningsStr.split('.');
+        fullInnings = parseInt(parts[0]) || 0;
+        extraOuts = parseInt(parts[1]) || 0;
+      } else {
+        // Just a number
+        fullInnings = parseInt(inningsStr) || 0;
+      }
+      
       const outsRecorded = (fullInnings * 3) + extraOuts;
       
       return {
-        totalPitches: acc.totalPitches + p.gameData.totalPitches,
-        strikes: acc.strikes + p.gameData.strikes,
+        totalPitches: acc.totalPitches + (p.gameData.totalPitches || 0),
+        strikes: acc.strikes + (p.gameData.strikes || 0),
         balls: acc.balls + (p.gameData.balls || 0),
-        battersFaced: acc.battersFaced + p.gameData.battersFaced,
-        outs: acc.outs + outsRecorded, // Use calculated outs from innings
-        rhbPitches: acc.rhbPitches + p.gameData.rhbPitches,
-        rhbStrikes: acc.rhbStrikes + p.gameData.rhbStrikes,
-        lhbPitches: acc.lhbPitches + p.gameData.lhbPitches,
-        lhbStrikes: acc.lhbStrikes + p.gameData.lhbStrikes
+        battersFaced: acc.battersFaced + (p.gameData.battersFaced || 0),
+        outs: acc.outs + outsRecorded,
+        rhbPitches: acc.rhbPitches + (p.gameData.rhbPitches || 0),
+        rhbStrikes: acc.rhbStrikes + (p.gameData.rhbStrikes || 0),
+        lhbPitches: acc.lhbPitches + (p.gameData.lhbPitches || 0),
+        lhbStrikes: acc.lhbStrikes + (p.gameData.lhbStrikes || 0)
       };
     }, { totalPitches: 0, strikes: 0, balls: 0, battersFaced: 0, outs: 0, rhbPitches: 0, rhbStrikes: 0, lhbPitches: 0, lhbStrikes: 0 });
 
@@ -3500,7 +3520,7 @@ export default function PitchTracker() {
                   const updatedPitcher = {
                     ...currentPitcher,
                     games: [...(currentPitcher.games || []), gameData],
-                    availableToday: currentPitcher.availableToday - totalPitches
+                    availableToday: (currentPitcher.availableToday || 0) - totalPitches
                   };
                   
                   setAllPitchers(allPitchers.map(p => p.id === currentPitcher.id ? updatedPitcher : p));
@@ -4158,7 +4178,7 @@ ${coachNotes ? `COACH NOTES:\n${coachNotes}` : ''}`;
           {/* Version Information */}
           <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-6">
             <p className="text-sm font-semibold text-blue-900">
-              Version 3.2.6 - Last Updated: {new Date().toLocaleString('en-US', { 
+              Version 3.2.7 - Last Updated: {new Date().toLocaleString('en-US', { 
                 month: 'long', 
                 day: 'numeric', 
                 year: 'numeric', 
